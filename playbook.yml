@@ -1,0 +1,348 @@
+#################################################################################################
+# Modified DO Community Playbook: Initial Server Setup with fail2ban and Docker on Ubuntu 23.04 #
+#################################################################################################
+---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+  roles:
+    - oefenweb.fail2ban
+  vars:
+    fail2ban_ignoreips:
+    - "{{ ansible_lo['ipv4']['address'] }}/8"
+    - "{{ ansible_default_ipv4['address'] }}"
+    - "{{ address }}"
+    fail2ban_bantime: 3600
+    fail2ban_services:
+      # TODO: In Ubuntu 16.04 this is sshd
+      - name: "{{ fail2ban_ssh_service_name }}"
+        maxretry: 5
+        ignoreip:
+          - "{{ ansible_lo['ipv4']['address'] }}/8"
+          - "{{ ansible_default_ipv4['address'] }}"
+          - "{{ address }}"
+      # TODO: In Ubuntu 16.04 this is sshd-ddos
+      - name: "{{ fail2ban_ssh_service_name }}-ddos"
+        maxretry: 5
+        ignoreip:
+          - "{{ ansible_lo['ipv4']['address'] }}/8"
+          - "{{ ansible_default_ipv4['address'] }}"
+          - "{{ address }}"
+
+  tasks:
+    # Wait for system to become reachable
+    - name: Wait for system to become reachable
+      wait_for_connection:
+        timeout: 600
+
+    # Wait for cloud-init / user-data to finish 
+    - name: Wait for cloud-init / user-data to finish
+      command: cloud-init status --wait
+      changed_when: false
+      retries: 10
+      delay: 10
+      until: result.stdout == "done"
+      register: result
+      when: false #by setting the when condition to false, the task will be skipped
+
+    - name: Install Prerequisites
+      apt:
+        name:
+          - aptitude
+        update_cache: yes
+        state: present
+        force_apt_get: yes
+
+# Sudo Group Setup
+    - name: Make sure we have a 'wheel' group
+      group:
+        name: wheel
+        state: present
+
+    - name: Allow 'wheel' group to have passwordless sudo
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^(%wheel|%@includedir)'
+        line: '%wheel ALL=(ALL:ALL) NOPASSWD: ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Add deploy user to sudoers
+      lineinfile: 
+        path: /etc/sudoers
+        regexp: "{{ added_user }} ALL"
+        line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
+        state: present
+
+    # - name: Allow members of group sudo to execute any command
+    #   lineinfile: 
+    #     path: /etc/sudoers
+    #     regexp: '%sudo   ALL=(ALL:ALL) ALL'
+    #     line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
+    #     state: present
+
+# User + Key Setup
+    - name: Create a new regular user with sudo privileges
+      user:
+        name: "{{ added_user }}"
+        state: present
+        groups: wheel
+        append: true
+        create_home: true
+        shell: /bin/bash
+
+    - name: Set authorized key for remote user
+      authorized_key:
+        user: "{{ added_user }}"
+        state: present
+        key: "{{ copy_local_key }}"
+
+    # - name: Disable password authentication for root
+    #   lineinfile:
+    #     path: /etc/ssh/sshd_config
+    #     state: present
+    #     regexp: '^#?PermitRootLogin'
+    #     line: 'PermitRootLogin prohibit-password'
+
+    # - name: Disable Root Login
+    #   lineinfile:
+    #     dest: /etc/ssh/sshd_config
+    #     regexp: '^PermitRootLogin'
+    #     line: "PermitRootLogin no" # Should be set to no
+    #     state: present
+    #     backup: yes
+    #   become: yes
+    #   notify:
+    #     - restart ssh
+
+    - name: change password
+      ansible.builtin.user:
+        name: "{{ added_user }}"
+        state: present
+        password: "{{ user_password | password_hash('sha512') }}"
+
+   # Use a block to perform tasks conditionally—only if running Ubuntu 23.04.
+    - block:
+
+      - debug:
+          msg: 'This server is running Ubuntu 22.10 LTS and will be upgraded to 23.10.'
+
+      # Now would be a good time to take a backup if you can trigger an automated backup!
+      - name: Remove the EOL message of the day if one exists.
+        file:
+          path: "{{ item }}"
+          state: absent
+        with_items:
+          - /etc/update-motd.d/99-esm
+          - /run/motd.dynamic
+
+      - name: Upgrade all packages to the latest version
+        apt: update_cache=yes upgrade=full
+
+      - name: Ensure update-manager-core is installed.
+        apt: name=update-manager-core state=present
+
+      - name: Run do-release-upgrade non-interactively.
+        command: do-release-upgrade -f DistUpgradeViewNonInteractive
+        ignore_errors: yes 
+
+      - name: Reboot the server.
+        reboot:
+
+      when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
+
+# Install Packages
+    - name: Update apt
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+
+    - name: Remove apt lock file
+      file:
+        state: absent
+        path: "/var/lib/dpkg/lock"
+
+    - name: Update all packages to their latest version
+      ansible.builtin.apt:
+        name: "*"
+        state: latest
+
+    - name: Upgrade the OS (apt-get dist-upgrade)
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Pass options to dpkg on run
+      ansible.builtin.apt:
+        upgrade: dist
+        update_cache: yes
+        dpkg_options: 'force-confold,force-confdef'
+
+    - name: Install required system packages
+      apt:
+        name: "{{ sys_packages }}"
+        state: latest
+
+    - name: Install required system packages
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+          - nmap
+        state: latest
+        update_cache: true
+
+    - name: Update and upgrade apt packages
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400 
+
+    - name: Remove useless packages from the cache
+      ansible.builtin.apt:
+        autoclean: yes
+
+    - name: Remove dependencies that are no longer required
+      ansible.builtin.apt:
+        autoremove: yes
+
+
+# UFW Setup
+    - name: UFW - Allow SSH connections
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: UFW - Deny all other incoming traffic by default
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    - name: Allow all access to tcp port 22
+      ufw:
+        rule: allow
+        port: 22
+        proto: tcp
+
+    - name: Allow all access to tcp port 80
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+
+    - name: Allow all access to tcp port 443
+      ufw:
+        rule: allow
+        port: 443
+        proto: tcp  
+
+    # - name: Allow all access to udp port 22
+    #   ufw:
+    #     rule: allow
+    #     port: 22
+    #     proto: udp
+
+    # - name: Allow all access to udp port 80
+    #   ufw:
+    #     rule: allow
+    #     port: 80
+    #     proto: udp
+
+    - name: Allow all access to udp port 443
+      ufw:
+        rule: allow
+        port: 443
+        proto: udp   
+
+    # - name: Allow mosh traffic
+    #   ufw: rule=allow proto=udp port={{ ubuntu_common_mosh_from_port }}:{{ ubuntu_common_mosh_to_port }}
+    #   when: "'mosh' in ubuntu_common_optional_packages"    
+
+# Install Aptitide and required packages
+    - name: Install aptitude
+      apt:
+        name: aptitude
+        state: latest
+        update_cache: true
+
+    - name: Install required system packages
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+        update_cache: true
+      
+# Install Docker
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      tags: [ docker ]
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable" 
+        state: present
+      tags: [ docker ]
+
+    - name: Update apt and install docker-ce
+      apt:
+        name: docker-ce
+        state: latest
+        update_cache: true
+      tags: [ docker ]
+
+    - name: Add remote linux user to "docker" group
+      remote_user: "{{ added_user }}"
+      user:
+        name: "{{ added_user }}"
+        group: docker
+        append: yes
+      tags: [ docker ]
+
+    # - name: Add remote Linux user to "docker" group
+    #   user:
+    #     name: "{{ ansible_user }}"
+    #     groups: docker
+    #     append: yes      
+    #   tags: [ docker ]
+
+    - meta: reset_connection
+
+    - name: Modify Docker socket permissions
+      command: chmod 666 /var/run/docker.sock
+      become: yes
+      become_user: root
+      tags: [ docker ]
+
+    - name: Install Docker Module for Python
+      pip:
+        name: docker
+        virtualenv: ~/dev/venv  # Specify the path to the virtual environment
+      tags: [docker]
+
+    - name: Install docker-compose
+      remote_user: "{{ added_user }}"
+      get_url: 
+        url : https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: u+x,g+x,o+x
+      tags: [ docker ]
+
+  handlers:
+    - name: restart ssh
+      service:
+        name: ssh
+        state: restarted
