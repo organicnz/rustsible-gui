@@ -52,17 +52,17 @@
           - "{{ ansible_lo['ipv4']['address'] }}/8"
           - "{{ ansible_default_ipv4['address'] }}"
           - "{{ address }}"
-        fail2ban_bantime: 86400  # 24 hours (direct value)
-        fail2ban_findtime: 600   # 10 minutes (direct value)
+        fail2ban_bantime: "{{ fail2ban_bantime }}"
+        fail2ban_findtime: "{{ fail2ban_findtime }}"
         fail2ban_services:
           - name: "{{ fail2ban_ssh_service_name }}"
-            maxretry: 3  # Direct value
+            maxretry: "{{ fail2ban_maxretry }}"
             ignoreip:
               - "{{ ansible_lo['ipv4']['address'] }}/8"
               - "{{ ansible_default_ipv4['address'] }}"
               - "{{ address }}"
           - name: "{{ fail2ban_ssh_service_name }}-ddos"
-            maxretry: 3  # Direct value
+            maxretry: "{{ fail2ban_maxretry }}"
             ignoreip:
               - "{{ ansible_lo['ipv4']['address'] }}/8"
               - "{{ ansible_default_ipv4['address'] }}"

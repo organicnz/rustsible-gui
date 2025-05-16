@@ -3,7 +3,7 @@
 ip_address: "64.227.113.96"
 added_user: organic
 user_password: "{{ lookup('file', lookup('env','HOME') + '/.ssh/password') }}"
-copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa_gitlab.pub') }}"
+copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/azure_id_rsa.pub') }}"
 
 # System Packages
 sys_packages: 
