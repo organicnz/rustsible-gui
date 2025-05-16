@@ -1,0 +1,166 @@
+---
+# Docker Installation and Configuration
+
+- name: Check if Docker should be installed
+  debug:
+    msg: "Docker installation is {{ 'enabled' if install_docker else 'disabled' }}"
+  tags:
+    - docker
+
+- name: Install Docker and Docker Compose
+  block:
+    # Install prerequisites
+    - name: Install required dependencies
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - python3-pip
+        state: latest
+        update_cache: true
+      tags:
+        - docker
+        - packages
+
+    # Add Docker repository
+    - name: Add Docker GPG apt key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      tags:
+        - docker
+        - packages
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      tags:
+        - docker
+        - packages
+
+    # Install Docker
+    - name: Install Docker packages
+      apt:
+        pkg:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: latest
+        update_cache: true
+      tags:
+        - docker
+        - packages
+
+    # Configure Docker users
+    - name: Create docker group
+      group:
+        name: docker
+        state: present
+      tags:
+        - docker
+        - security
+
+    - name: Add users to docker group
+      user:
+        name: "{{ item }}"
+        groups: docker
+        append: yes
+      loop: "{{ docker_users }}"
+      tags:
+        - docker
+        - security
+
+    # Install Docker Compose
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/{{ docker_compose_version }}/download/docker-compose-Linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+      when: docker_compose_version != "latest"
+      tags:
+        - docker
+
+    - name: Install latest Docker Compose
+      get_url:
+        url: https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+      when: docker_compose_version == "latest"
+      tags:
+        - docker
+
+    # Install Python Docker module
+    - name: Install Docker module for Python
+      pip:
+        name: docker
+      tags:
+        - docker
+        - packages
+
+    # Configure Docker daemon with improved security
+    - name: Create Docker daemon directory
+      file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+      tags:
+        - docker
+        - security
+
+    - name: Configure Docker daemon with security settings
+      copy:
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "10m",
+              "max-file": "3"
+            },
+            "live-restore": true,
+            "userland-proxy": false,
+            "no-new-privileges": true
+          }
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart docker
+      tags:
+        - docker
+        - security
+
+    # Start and enable Docker service
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+      tags:
+        - docker
+
+    # Verify Docker installation
+    - name: Verify Docker is running
+      command: docker info
+      register: docker_info
+      changed_when: false
+      ignore_errors: true
+      tags:
+        - docker
+        - verify
+
+    - name: Display Docker version
+      debug:
+        msg: "Docker is running successfully: {{ docker_info.stdout_lines[0] }}"
+      when: docker_info.rc == 0
+      tags:
+        - docker
+        - verify
+
+  when: install_docker | bool
+  tags:
+    - docker 

@@ -1,0 +1,128 @@
+---
+# Security Configuration Tasks
+
+# SSH Hardening
+- name: Configure SSH for security
+  block:
+    - name: Disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      when: not password_authentication
+      notify: restart ssh
+      
+    - name: Disable root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      when: disable_root_login
+      notify: restart ssh
+      
+    - name: Change SSH port if non-standard
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: '^#?Port '
+        line: 'Port {{ ssh_port }}'
+      when: ssh_port != 22
+      notify: restart ssh
+  tags:
+    - security
+    - ssh
+
+# UFW Firewall Setup
+- name: UFW Setup
+  block:
+    - name: UFW - Allow SSH connections
+      ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+      
+    - name: Set up UFW allowed ports
+      ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop: "{{ ufw_allowed_ports }}"
+      
+    - name: UFW - Deny all other incoming traffic by default
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+  tags:
+    - security
+    - firewall
+
+# Fail2Ban Additional Configuration
+- name: Configure fail2ban custom settings
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart fail2ban
+  tags:
+    - security
+    - fail2ban
+
+# System Hardening
+- name: Apply system hardening
+  block:
+    - name: Set strong password policies
+      lineinfile:
+        path: /etc/pam.d/common-password
+        line: "password requisite pam_cracklib.so retry=3 minlen=12 difok=3"
+        state: present
+      
+    - name: Set proper permissions on critical directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+      loop:
+        - /etc/cron.d
+        - /etc/cron.daily
+        - /etc/cron.hourly
+        - /etc/cron.monthly
+        - /etc/cron.weekly
+  rescue:
+    - name: Log failure
+      debug:
+        msg: "System hardening failed, please check for errors"
+  tags:
+    - security
+    - hardening
+
+# DDOS Protection
+- name: Setup basic DDOS protection
+  block:
+    - name: Install fail2ban DDOS configuration
+      copy:
+        content: |
+          [http-get-dos]
+          enabled = true
+          port = http,https
+          filter = http-get-dos
+          logpath = /var/log/apache2/access.log
+          maxretry = 300
+          findtime = 300
+          bantime = 600
+        dest: /etc/fail2ban/jail.d/http-get-dos.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart fail2ban
+      when: false  # Enable only if using a web server
+  tags:
+    - security
+    - ddos
+    - optional 

@@ -1,0 +1,145 @@
+---
+# Base System Setup
+
+# Wait for system to become available
+- name: Wait for system to become reachable
+  wait_for_connection:
+    timeout: 600
+  tags: 
+    - always
+
+# Wait for cloud-init / user-data to finish
+- name: Wait for cloud-init / user-data to finish
+  command: cloud-init status --wait
+  changed_when: false
+  retries: 10
+  delay: 10
+  until: result.stdout == "done"
+  register: result
+  when: false  # Change to true if using cloud-init
+  tags:
+    - system
+
+# User Management
+- name: Make sure we have a 'wheel' group
+  group:
+    name: wheel
+    state: present
+  tags:
+    - user
+    - security
+
+- name: Allow 'wheel' group to have passwordless sudo
+  lineinfile:
+    path: /etc/sudoers
+    state: present
+    regexp: '^(%wheel|%@includedir)'
+    line: '%wheel ALL=(ALL:ALL) NOPASSWD: ALL'
+    validate: '/usr/sbin/visudo -cf %s'
+  tags:
+    - user
+    - security
+
+- name: Create a new regular user with sudo privileges
+  user:
+    name: "{{ added_user }}"
+    state: present
+    groups: wheel
+    append: true
+    create_home: true
+    shell: /bin/bash
+  tags:
+    - user
+
+- name: Set authorized key for remote user
+  authorized_key:
+    user: "{{ added_user }}"
+    state: present
+    key: "{{ copy_local_key }}"
+  tags:
+    - user
+    - security
+
+- name: Set password for user
+  user:
+    name: "{{ added_user }}"
+    state: present
+    password: "{{ user_password | password_hash('sha512') }}"
+  tags:
+    - user
+    - security
+
+- name: Add deploy user to sudoers
+  lineinfile: 
+    path: /etc/sudoers
+    regexp: "{{ added_user }} ALL"
+    line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
+    state: present
+    validate: '/usr/sbin/visudo -cf %s'
+  tags:
+    - user
+    - security
+
+# Package Management
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags:
+    - system
+    - packages
+
+- name: Install required system packages
+  apt:
+    name: "{{ sys_packages }}"
+    state: latest
+    update_cache: yes
+  tags:
+    - system
+    - packages
+
+- name: Upgrade all packages to their latest version
+  apt:
+    name: "*"
+    state: latest
+  tags:
+    - system
+    - packages
+
+- name: Clean apt cache and remove unnecessary dependencies
+  block:
+    - name: Remove useless packages from the cache
+      apt:
+        autoclean: yes
+    
+    - name: Remove dependencies that are no longer required
+      apt:
+        autoremove: yes
+  tags:
+    - system
+    - packages
+
+# System Upgrade (Ubuntu version specific)
+- name: Check if Ubuntu version upgrade is needed
+  block:
+    - name: Check distribution version
+      debug:
+        msg: 'This server is running Ubuntu {{ ansible_distribution_version }}'
+
+    - name: Remove EOL message of the day if applicable
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/update-motd.d/99-esm
+        - /run/motd.dynamic
+      when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
+
+    - name: Ensure update-manager-core is installed
+      apt:
+        name: update-manager-core
+        state: present
+      when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
+  tags:
+    - system
+    - upgrade 

@@ -1,0 +1,23 @@
+---
+# IP address of the created droplet or instance
+ip_address: "64.227.113.96"
+
+# Name of a new user
+added_user: organic
+
+# Path to your password 
+user_password: "{{ lookup('file', lookup('env','HOME') + '/.ssh/password') }}" 
+
+# Path to your rsa key 
+copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/azure_id_rsa.pub') }}" 
+sys_packages: [ 'curl', 'vim', 'git', 'ufw']
+
+# Fail2ban ansible_default_ipv4
+address: 127.0.0.1 {{ ip_address }}
+fail2ban_ssh_service_name: sshd
+
+# ignore_errors: '{{ ansible_check_mode }}'
+# ignore_errors: yes
+ansible_check_mode: "True"
+
+

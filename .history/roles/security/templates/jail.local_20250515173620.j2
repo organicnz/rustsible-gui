@@ -1,0 +1,31 @@
+[DEFAULT]
+# Ban hosts for {{ fail2ban_bantime }} seconds (24 hours)
+bantime = {{ fail2ban_bantime }}
+# A host is banned if it has generated {{ fail2ban_maxretry }} during the last {{ fail2ban_findtime }} seconds
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
+
+# Email notifications
+destemail = root@localhost
+sendername = Fail2Ban
+mta = sendmail
+action = %(action_mw)s
+
+# Ignore these IPs
+ignoreip = 127.0.0.1/8 ::1 {{ ansible_default_ipv4.address }} {{ address }}
+
+[sshd]
+enabled = true
+port = {{ ssh_port }}
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+
+[sshd-ddos]
+enabled = true
+port = {{ ssh_port }}
+filter = sshd-ddos
+logpath = /var/log/auth.log
+maxretry = 3
+
+# Add more jails as needed for specific services 
