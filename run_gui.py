@@ -236,18 +236,18 @@ class ProvisioningGUI:
         # Canvas for scrolling with modern styling (store as instance variable)
         self.canvas = tk.Canvas(main_frame, bg=self.colors['bg'], highlightthickness=0)
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=self.canvas.yview)
-        scrollable_frame = ttk.Frame(self.canvas, style='Main.TFrame')
+        self.scrollable_frame = ttk.Frame(self.canvas, style='Main.TFrame')
 
-        scrollable_frame.bind(
+        self.scrollable_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=scrollbar.set)
 
         # Modern header with enhanced styling
-        header_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
+        header_frame = ttk.Frame(self.scrollable_frame, style='Main.TFrame')
         header_frame.grid(row=0, column=0, columnspan=2, pady=(0, self.spacing['xl']))
 
         title = ttk.Label(header_frame,
@@ -265,7 +265,7 @@ class ProvisioningGUI:
         divider.pack(fill=tk.X, pady=(self.spacing['md'], 0))
 
         # Connection Information Card with enhanced styling
-        conn_frame = ttk.LabelFrame(scrollable_frame,
+        conn_frame = ttk.LabelFrame(self.scrollable_frame,
                                     text="  📡 Connection Information  ",
                                     padding=str(self.spacing['lg']),
                                     style='Card.TLabelframe')
@@ -298,7 +298,7 @@ class ProvisioningGUI:
         conn_frame.columnconfigure(1, weight=1)
 
         # Core Features Card with enhanced styling
-        core_frame = ttk.LabelFrame(scrollable_frame,
+        core_frame = ttk.LabelFrame(self.scrollable_frame,
                                     text="  ⚡ Core Features  ",
                                     padding=str(self.spacing['lg']),
                                     style='Card.TLabelframe')
@@ -322,7 +322,7 @@ class ProvisioningGUI:
                        variable=self.features['certbot']).grid(row=7, column=0, sticky=tk.W, pady=self.spacing['xs'])
 
         # Security Clusters Card with enhanced styling
-        security_frame = ttk.LabelFrame(scrollable_frame,
+        security_frame = ttk.LabelFrame(self.scrollable_frame,
                                        text="  🔒 Security Clusters  ",
                                        padding=str(self.spacing['lg']),
                                        style='Card.TLabelframe')
@@ -365,7 +365,7 @@ class ProvisioningGUI:
         ap_label.grid(row=7, column=0, sticky=tk.W, padx=0, pady=(0, 6))
 
         # Maintenance Settings Card with enhanced styling
-        maint_frame = ttk.LabelFrame(scrollable_frame,
+        maint_frame = ttk.LabelFrame(self.scrollable_frame,
                                      text="  🔧 Maintenance Settings  ",
                                      padding=str(self.spacing['lg']),
                                      style='Card.TLabelframe')
@@ -415,7 +415,7 @@ class ProvisioningGUI:
         self.toggle_reboot_config()
 
         # Action Buttons with enhanced styling
-        button_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
+        button_frame = ttk.Frame(self.scrollable_frame, style='Main.TFrame')
         button_frame.grid(row=5, column=0, columnspan=2, pady=(self.spacing['xl'], self.spacing['lg']))
 
         # Primary launch button with gradient-like effect
@@ -468,7 +468,7 @@ class ProvisioningGUI:
         exit_btn.bind('<Leave>', on_exit_leave)
 
         # Footer with enhanced styling
-        footer_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
+        footer_frame = ttk.Frame(self.scrollable_frame, style='Main.TFrame')
         footer_frame.grid(row=6, column=0, columnspan=2, pady=(self.spacing['lg'], 0))
 
         # Divider above footer
@@ -495,42 +495,47 @@ class ProvisioningGUI:
     def _bind_mousewheel(self, widget):
         """Bind mousewheel/trackpad scrolling events to the canvas"""
         import platform
+        import sys
 
-        def on_mousewheel(event):
-            """Handle mousewheel and trackpad scrolling"""
-            # macOS uses event.delta directly (typically ±1 for trackpad)
-            # Windows uses larger values (±120)
-            self.canvas.yview_scroll(int(-1 * event.delta), "units")
+        def _on_mousewheel(event):
+            """Cross-platform mousewheel handler"""
+            self.canvas.yview_scroll(int(-1 * (event.delta)), "units")
 
-        def on_linux_scroll_up(event):
-            """Handle Linux scroll up"""
-            self.canvas.yview_scroll(-1, "units")
+        def _on_shiftmouse(event):
+            """Horizontal scroll (not used but prevents errors)"""
+            self.canvas.xview_scroll(int(-1 * (event.delta)), "units")
 
-        def on_linux_scroll_down(event):
-            """Handle Linux scroll down"""
-            self.canvas.yview_scroll(1, "units")
+        def _on_linux_scroll(event):
+            """Linux scroll handler"""
+            if event.num == 4:
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.canvas.yview_scroll(1, "units")
 
-        # Detect platform
-        system = platform.system()
+        # For macOS, we need to bind to Enter/Leave events to capture scrolling
+        def _bound_to_mousewheel(event):
+            """Activate mousewheel scrolling when mouse enters"""
+            if platform.system() == 'Darwin':
+                self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            elif platform.system() == 'Windows':
+                self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            else:  # Linux
+                self.canvas.bind_all("<Button-4>", _on_linux_scroll)
+                self.canvas.bind_all("<Button-5>", _on_linux_scroll)
 
-        if system == "Darwin":  # macOS
-            # macOS requires binding to the widget and all its children
-            widget.bind("<MouseWheel>", on_mousewheel)
-            self.root.bind("<MouseWheel>", on_mousewheel)
-            # Also bind to all child widgets
-            def bind_to_children(w):
-                w.bind("<MouseWheel>", on_mousewheel, add="+")
-                for child in w.winfo_children():
-                    bind_to_children(child)
-            # Bind after widget is fully created
-            self.root.after(100, lambda: bind_to_children(self.root))
-        elif system == "Windows":
-            self.root.bind("<MouseWheel>", on_mousewheel)
-        else:  # Linux
-            widget.bind("<Button-4>", on_linux_scroll_up)
-            widget.bind("<Button-5>", on_linux_scroll_down)
-            self.root.bind("<Button-4>", on_linux_scroll_up)
-            self.root.bind("<Button-5>", on_linux_scroll_down)
+        def _unbound_to_mousewheel(event):
+            """Deactivate mousewheel scrolling when mouse leaves"""
+            self.canvas.unbind_all("<MouseWheel>")
+            self.canvas.unbind_all("<Button-4>")
+            self.canvas.unbind_all("<Button-5>")
+
+        # Bind enter/leave events to the canvas
+        self.canvas.bind('<Enter>', _bound_to_mousewheel)
+        self.canvas.bind('<Leave>', _unbound_to_mousewheel)
+
+        # Also bind to the scrollable frame so scroll works over content
+        self.scrollable_frame.bind('<Enter>', _bound_to_mousewheel)
+        self.scrollable_frame.bind('<Leave>', _unbound_to_mousewheel)
 
     def toggle_reboot_config(self):
         """Enable/disable reboot hour selection based on checkbox state"""
