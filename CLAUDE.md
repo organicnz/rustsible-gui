@@ -91,22 +91,38 @@ The playbook uses 10 roles executed in specific order:
 
 ### Running the Playbook
 
-**Interactive Mode** (prompts for IP address):
+**Interactive Mode** (recommended - prompts for all connection details):
 ```bash
-# Initial setup (as root) - will prompt for server IP
-ansible-playbook playbook.yml -l webservers -i inventory.ini -u root -k
+# The playbook will prompt for:
+#   1. Server IP address
+#   2. SSH username (default: root)
+#   3. SSH key path (default: ~/.ssh/id_rsa_gitlab)
 
-# Subsequent runs (as non-root user) - will prompt for server IP
-ansible-playbook playbook.yml -l webservers -i inventory.ini -u organic --ask-become-pass
+ansible-playbook playbook.yml
+
+# Example prompts:
+# Enter the server IP address: 152.53.136.84
+# Enter SSH username (default: root): organic
+# Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab): ~/.ssh/id_rsa
+
+# Or just press Enter to accept defaults for username and key path:
+# Enter the server IP address: 152.53.136.84
+# Enter SSH username (default: root): [press Enter]
+# Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab): [press Enter]
 ```
 
-**Non-Interactive Mode** (skip IP prompt by providing via command line):
+**Non-Interactive Mode** (for automation - no prompts):
 ```bash
-# Provide IP address via -e flag to skip prompt
-ansible-playbook playbook.yml -l webservers -i inventory.ini -u organic --ask-become-pass -e "ip_address=152.53.136.84"
+# Skip all prompts by providing values via -e flags
+ansible-playbook playbook.yml \
+  -e "target_ip=152.53.136.84" \
+  -e "target_user=root" \
+  -e "ssh_key_path=~/.ssh/id_rsa_gitlab"
+
+# For CI/CD pipelines, you can also use environment variables
 ```
 
-**Note**: The playbook will **always** prompt for the server IP address at runtime unless you provide it via the `-e` flag. The IP address is used for fail2ban whitelist configuration.
+**Note**: The playbook dynamically builds the inventory based on your inputs. No need to edit `inventory.ini` for interactive usage. The IP address is used for SSH connection and fail2ban whitelist configuration.
 
 ### Tag-based Execution
 

@@ -37,6 +37,16 @@ A comprehensive, modular Ansible playbook for Ubuntu server configuration with s
 
 3. **SSH key** configured on the server
 
+### Beautified Interactive Experience
+
+This playbook features a modern, beautified interactive experience with:
+- Color-coded output with visual indicators (✓, ✗, ●, ○)
+- Professional box-drawing characters for headers
+- Clear feature selection summary
+- Real-time status updates during provisioning
+
+See `docs/BEAUTIFIED_PROMPTS_GUIDE.md` for details on the beautification enhancements.
+
 ### Installation
 
 1. Clone this repository:
@@ -70,20 +80,71 @@ A comprehensive, modular Ansible playbook for Ubuntu server configuration with s
 
 6. Run the playbook:
    ```bash
+   # Interactive mode with beautified prompts
+   ansible-playbook playbook.yml
+
+   # See demo of beautified output
+   bash docs/demo_beautified_output.sh
+
    # Dry run first (check mode)
    ansible-playbook playbook.yml --check
 
-   # Actual run (will prompt for server IP address)
-   ansible-playbook playbook.yml
-
-   # With vault password (will prompt for IP address)
+   # With vault password
    ansible-playbook playbook.yml --ask-vault-pass
-
-   # Non-interactive mode (skip IP prompt)
-   ansible-playbook playbook.yml -e "ip_address=152.53.136.84"
    ```
 
-   **Note**: The playbook will **always** interactively prompt for the server IP address unless you provide it via the `-e` flag.
+   **Note**: The playbook will interactively prompt for connection info and feature selection with a beautified, color-coded interface.
+
+### Three Ways to Run the Provisioning
+
+This playbook offers three different interfaces to suit your preference:
+
+#### 1. Direct Playbook (Basic Interactive)
+Standard Ansible with beautified color-coded prompts:
+```bash
+ansible-playbook playbook.yml
+```
+
+#### 2. CLI with Checkbox Selection (Advanced)
+Interactive terminal interface with checkbox selection:
+```bash
+# Quick launcher (auto-installs dependencies)
+./RUN_ME.sh
+
+# Or run directly
+python3 run_interactive.py
+```
+
+Features:
+- Automatic virtual environment setup
+- Preview of all questions before answering
+- Checkbox selection for features
+- Security clusters (4 groups: System Hardening, Monitoring, Network Security, Advanced Protection)
+- Validation (WordPress requires LEMP)
+- Color-coded summary with feature breakdowns
+
+#### 3. GUI Interface (Visual)
+Full graphical interface with tkinter:
+```bash
+# Quick launcher
+./RUN_GUI.sh
+
+# Or run directly
+python3 run_gui.py
+```
+
+Features:
+- All options visible on one screen
+- Real GUI checkboxes
+- Auto-save settings (cached between sessions)
+- Scrollable interface
+- Connection info fields (IP, username, SSH key)
+- 8 core features + 4 security clusters
+- Live terminal output window during provisioning
+- Visual progress tracking
+- Modern, beautiful interface with hover effects
+
+**Recommended**: Use the GUI (`./RUN_GUI.sh`) for the best experience, especially when selecting from many options.
 
 ## Configuration
 

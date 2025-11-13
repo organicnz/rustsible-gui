@@ -223,3 +223,459 @@
     - ddos
     - optional
     - web-protection 
+# =============================================================================
+# ADVANCED SECURITY FEATURES
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 6: Kernel Hardening (sysctl)
+# -----------------------------------------------------------------------------
+# Hardens kernel parameters to protect against network attacks and exploits.
+
+- name: "Kernel Hardening | Apply sysctl security parameters"
+  block:
+    - name: "Kernel Security | Configure kernel parameters via sysctl"
+      # Applies comprehensive kernel hardening settings.
+      # Protects against: SYN floods, IP spoofing, ICMP attacks, etc.
+      ansible.builtin.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+        sysctl_set: yes
+      loop: "{{ kernel_hardening_settings | dict2items }}"
+      when: enable_kernel_hardening | bool
+      tags:
+        - kernel
+        - sysctl
+  tags:
+    - security
+    - hardening
+    - kernel-hardening
+
+# -----------------------------------------------------------------------------
+# SECTION 7: Unattended Security Upgrades
+# -----------------------------------------------------------------------------
+# Automatically installs security updates without manual intervention.
+
+- name: "Auto Updates | Configure unattended security upgrades"
+  block:
+    - name: "Package Install | Install unattended-upgrades package"
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: "Config | Enable automatic security updates"
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::InstallOnShutdown "false";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+          Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+        owner: root
+        group: root
+        mode: '0644'
+  when: enable_unattended_upgrades | default(true) | bool
+  tags:
+    - security
+    - auto-updates
+    - unattended-upgrades
+
+# -----------------------------------------------------------------------------
+# SECTION 8: AppArmor Enforcement
+# -----------------------------------------------------------------------------
+# Enables and enforces AppArmor mandatory access control.
+
+- name: "AppArmor | Configure AppArmor enforcement"
+  block:
+    - name: "Package Install | Ensure AppArmor is installed"
+      ansible.builtin.apt:
+        name:
+          - apparmor
+          - apparmor-utils
+        state: present
+
+    - name: "Service | Ensure AppArmor service is enabled and running"
+      ansible.builtin.systemd:
+        name: apparmor
+        enabled: yes
+        state: started
+
+    - name: "Enforcement | Set all profiles to enforce mode"
+      ansible.builtin.shell: aa-enforce /etc/apparmor.d/*
+      when: apparmor_enforce_mode | bool
+      changed_when: false
+      failed_when: false
+  when: enable_apparmor | bool
+  tags:
+    - security
+    - apparmor
+    - mac
+
+# -----------------------------------------------------------------------------
+# SECTION 9: Secure Shared Memory
+# -----------------------------------------------------------------------------
+# Prevents privilege escalation attacks via shared memory.
+
+- name: "Shared Memory | Secure /dev/shm mount"
+  block:
+    - name: "Mount | Configure secure /dev/shm in /etc/fstab"
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "tmpfs /dev/shm tmpfs defaults,noexec,nodev,nosuid,size=2G 0 0"
+        regexp: '^tmpfs\s+/dev/shm'
+        state: present
+
+    - name: "Remount | Apply secure mount options immediately"
+      ansible.builtin.command: mount -o remount /dev/shm
+      changed_when: false
+  when: enable_secure_shm | bool
+  tags:
+    - security
+    - hardening
+    - shm
+
+# -----------------------------------------------------------------------------
+# SECTION 10: Lynis Security Auditing
+# -----------------------------------------------------------------------------
+# Installs Lynis for comprehensive security auditing.
+
+- name: "Lynis | Install security auditing tool"
+  block:
+    - name: "Package Install | Install Lynis"
+      ansible.builtin.apt:
+        name: lynis
+        state: present
+
+    - name: "Audit | Run security audit (if enabled)"
+      ansible.builtin.command: lynis audit system --quick
+      register: lynis_output
+      when: lynis_run_audit | bool
+      changed_when: false
+
+    - name: "Report | Display Lynis audit summary"
+      ansible.builtin.debug:
+        msg: "Lynis audit complete. Report: /var/log/lynis.log"
+      when: lynis_run_audit | bool
+  when: enable_lynis | bool
+  tags:
+    - security
+    - audit
+    - lynis
+
+# -----------------------------------------------------------------------------
+# SECTION 11: Rootkit Detection (rkhunter)
+# -----------------------------------------------------------------------------
+# Detects rootkits, backdoors, and local exploits.
+
+- name: "Rootkit Detection | Configure rkhunter"
+  block:
+    - name: "Package Install | Install rkhunter"
+      ansible.builtin.apt:
+        name: rkhunter
+        state: present
+
+    - name: "Database | Update rkhunter database"
+      ansible.builtin.command: rkhunter --update
+      changed_when: false
+
+    - name: "Baseline | Create initial file properties database"
+      ansible.builtin.command: rkhunter --propupd
+      changed_when: false
+
+    - name: "Cron | Schedule daily rootkit scans"
+      ansible.builtin.cron:
+        name: "rkhunter daily scan"
+        hour: "3"
+        minute: "30"
+        job: "/usr/bin/rkhunter --cronjob --report-warnings-only 2>&1 | logger -t rkhunter"
+        user: root
+      when: rkhunter_cron_daily | bool
+  when: enable_rkhunter | bool
+  tags:
+    - security
+    - rootkit
+    - rkhunter
+
+# -----------------------------------------------------------------------------
+# SECTION 12: File Integrity Monitoring (AIDE)
+# -----------------------------------------------------------------------------
+# Monitors file system for unauthorized changes.
+
+- name: "File Integrity | Configure AIDE"
+  block:
+    - name: "Package Install | Install AIDE"
+      ansible.builtin.apt:
+        name: aide
+        state: present
+
+    - name: "Database | Initialize AIDE database"
+      ansible.builtin.command: aideinit
+      args:
+        creates: /var/lib/aide/aide.db.new
+      async: 600
+      poll: 0
+      register: aide_init
+
+    - name: "Database | Move AIDE database to production location"
+      ansible.builtin.command: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+      args:
+        creates: /var/lib/aide/aide.db
+      when: aide_init is defined
+
+    - name: "Cron | Schedule daily integrity checks"
+      ansible.builtin.cron:
+        name: "AIDE daily check"
+        hour: "4"
+        minute: "0"
+        job: "/usr/bin/aide --check 2>&1 | logger -t aide"
+        user: root
+      when: aide_cron_daily | bool
+  when: enable_aide | bool
+  tags:
+    - security
+    - integrity
+    - aide
+
+# -----------------------------------------------------------------------------
+# SECTION 13: Audit Logging (auditd)
+# -----------------------------------------------------------------------------
+# Comprehensive system call and security event logging.
+
+- name: "Audit Logging | Configure auditd"
+  block:
+    - name: "Package Install | Install auditd"
+      ansible.builtin.apt:
+        name: auditd
+        state: present
+
+    - name: "Service | Enable and start auditd"
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: yes
+        state: started
+
+    - name: "Rules | Deploy audit rules"
+      ansible.builtin.lineinfile:
+        path: /etc/audit/rules.d/audit.rules
+        line: "{{ item }}"
+        create: yes
+      loop: "{{ auditd_rules }}"
+      notify: restart auditd
+
+    - name: "Rules | Load audit rules"
+      ansible.builtin.command: augenrules --load
+      changed_when: false
+  when: enable_auditd | bool
+  tags:
+    - security
+    - audit
+    - auditd
+
+# -----------------------------------------------------------------------------
+# SECTION 14: Log Monitoring (Logwatch)
+# -----------------------------------------------------------------------------
+# Daily log analysis and reporting.
+
+- name: "Log Monitoring | Configure Logwatch"
+  block:
+    - name: "Package Install | Install Logwatch"
+      ansible.builtin.apt:
+        name: logwatch
+        state: present
+
+    - name: "Config | Configure Logwatch settings"
+      ansible.builtin.copy:
+        dest: /etc/logwatch/conf/logwatch.conf
+        content: |
+          Detail = {{ logwatch_detail }}
+          MailTo = {{ logwatch_email if logwatch_email else 'root' }}
+          Range = yesterday
+          Service = All
+        owner: root
+        group: root
+        mode: '0644'
+  when: enable_logwatch | bool
+  tags:
+    - security
+    - logging
+    - logwatch
+
+# -----------------------------------------------------------------------------
+# SECTION 15: IPv6 Configuration
+# -----------------------------------------------------------------------------
+# Disables IPv6 if not needed to reduce attack surface.
+
+- name: "IPv6 | Disable IPv6 (if configured)"
+  block:
+    - name: "Kernel | Disable IPv6 via sysctl"
+      ansible.builtin.sysctl:
+        name: "{{ item }}"
+        value: "1"
+        state: present
+        reload: yes
+      loop:
+        - net.ipv6.conf.all.disable_ipv6
+        - net.ipv6.conf.default.disable_ipv6
+        - net.ipv6.conf.lo.disable_ipv6
+
+    - name: "GRUB | Disable IPv6 in GRUB configuration"
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX='
+        line: 'GRUB_CMDLINE_LINUX="ipv6.disable=1"'
+      notify: update grub
+  when: disable_ipv6 | bool
+  tags:
+    - security
+    - network
+    - ipv6
+
+# -----------------------------------------------------------------------------
+# SECTION 16: Two-Factor Authentication
+# -----------------------------------------------------------------------------
+# Configures Google Authenticator for SSH 2FA.
+
+- name: "2FA | Configure SSH Two-Factor Authentication"
+  block:
+    - name: "Package Install | Install Google Authenticator PAM module"
+      ansible.builtin.apt:
+        name: libpam-google-authenticator
+        state: present
+
+    - name: "Config | Enable 2FA in SSH configuration"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "ChallengeResponseAuthentication yes"
+        regexp: '^#?ChallengeResponseAuthentication'
+      notify: restart ssh
+
+    - name: "PAM | Configure PAM for Google Authenticator"
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/sshd
+        line: "auth required pam_google_authenticator.so nullok"
+        insertafter: "@include common-auth"
+
+    - name: "Notice | Display 2FA setup instructions"
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "2FA CONFIGURATION REQUIRED"
+          - "=========================================="
+          - "Each user must run: google-authenticator"
+          - "Follow prompts to set up OTP"
+          - "Scan QR code with authenticator app"
+          - "Save emergency scratch codes"
+          - "=========================================="
+  when: enable_ssh_2fa | bool
+  tags:
+    - security
+    - ssh
+    - 2fa
+
+# -----------------------------------------------------------------------------
+# SECTION 17: Automated Backups
+# -----------------------------------------------------------------------------
+# Configures automated system backups.
+
+- name: "Backups | Configure automated backup system"
+  block:
+    - name: "Directory | Create backup destination"
+      ansible.builtin.file:
+        path: "{{ backup_destination }}"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: "Script | Deploy backup script"
+      ansible.builtin.template:
+        src: backup_script.sh.j2
+        dest: /usr/local/bin/system_backup.sh
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: "Cron | Schedule automated backups"
+      ansible.builtin.cron:
+        name: "Automated system backup"
+        minute: "{{ backup_schedule.split()[0] }}"
+        hour: "{{ backup_schedule.split()[1] }}"
+        job: "/usr/local/bin/system_backup.sh 2>&1 | logger -t backup"
+        user: root
+  when: enable_backups | bool
+  tags:
+    - security
+    - backup
+    - recovery
+
+# -----------------------------------------------------------------------------
+# SECTION 18: USB Restrictions
+# -----------------------------------------------------------------------------
+# Blocks USB storage devices to prevent data exfiltration.
+
+- name: "USB Security | Restrict USB storage devices"
+  block:
+    - name: "Blacklist | Block usb-storage kernel module"
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/blacklist-usb-storage.conf
+        content: |
+          # Block USB storage devices
+          blacklist usb-storage
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Kernel | Unload usb-storage module if loaded"
+      ansible.builtin.command: rmmod usb-storage
+      failed_when: false
+      changed_when: false
+  when: enable_usb_restrictions | bool
+  tags:
+    - security
+    - usb
+    - restrictions
+
+# -----------------------------------------------------------------------------
+# SECTION 19: Network Intrusion Detection (Suricata)
+# -----------------------------------------------------------------------------
+# Deploys Suricata IDS for network threat detection.
+
+- name: "IDS | Configure Suricata Network Intrusion Detection"
+  block:
+    - name: "Package Install | Install Suricata"
+      ansible.builtin.apt:
+        name:
+          - suricata
+          - suricata-update
+        state: present
+
+    - name: "Config | Configure Suricata interface"
+      ansible.builtin.lineinfile:
+        path: /etc/suricata/suricata.yaml
+        regexp: '^\s+- interface:'
+        line: "    - interface: {{ suricata_interface }}"
+
+    - name: "Rules | Update Suricata rulesets"
+      ansible.builtin.command: suricata-update
+      changed_when: false
+
+    - name: "Service | Enable and start Suricata"
+      ansible.builtin.systemd:
+        name: suricata
+        enabled: yes
+        state: started
+  when: enable_suricata | bool
+  tags:
+    - security
+    - ids
+    - suricata
+    - network
+

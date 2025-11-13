@@ -17,4 +17,14 @@
   ansible.builtin.service:
     name: ufw
     state: reloaded
+  become: true
+
+- name: restart auditd
+  ansible.builtin.service:
+    name: auditd
+    state: restarted
+  become: true
+
+- name: update grub
+  ansible.builtin.command: update-grub
   become: true 

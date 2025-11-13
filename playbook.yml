@@ -3,19 +3,217 @@
 # Modular playbook for Ubuntu server configuration with security hardening,
 # optional Docker, LEMP stack, development tools, and system optimization
 
-- hosts: all
-  become: true
-  gather_facts: true
+# =============================================================================
+# PLAY 1: Gather Connection Information
+# =============================================================================
+# Purpose: Prompt for server IP and SSH credentials, then dynamically add host
+# This play runs locally and sets up the inventory for the main provisioning play
+- name: Gather server connection information
+  hosts: localhost
+  connection: local
+  gather_facts: false
 
   vars_prompt:
-    - name: ip_address
+    # Connection Information
+    - name: target_ip
       prompt: "Enter the server IP address"
       private: false
 
+    - name: target_user
+      prompt: "Enter SSH username (default: root)"
+      private: false
+      default: "root"
+
+    - name: ssh_key_path
+      prompt: "Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab)"
+      private: false
+      default: "~/.ssh/id_rsa_gitlab"
+
+    # Optional Features Selection
+    - name: prompt_enable_fail2ban
+      prompt: "\n=== OPTIONAL FEATURES ===\nEnable Fail2ban intrusion prevention? (yes/no)"
+      private: false
+      default: "yes"
+
+    - name: prompt_install_docker
+      prompt: "Install Docker and Docker Compose? (yes/no)"
+      private: false
+      default: "yes"
+
+    - name: prompt_install_lemp
+      prompt: "Install LEMP stack (Nginx, MySQL, PHP)? (yes/no)"
+      private: false
+      default: "no"
+
+    - name: prompt_enable_swap
+      prompt: "Configure swap memory (auto-sized based on RAM)? (yes/no)"
+      private: false
+      default: "yes"
+
+    - name: prompt_enable_cron_jobs
+      prompt: "Enable automated cron jobs for maintenance? (yes/no)"
+      private: false
+      default: "yes"
+
+    - name: prompt_install_dev_tools
+      prompt: "Install development tools (Neovim, Node.js, Claude Code)? (yes/no)"
+      private: false
+      default: "no"
+
+    - name: prompt_install_wordpress
+      prompt: "Install WordPress (requires LEMP stack)? (yes/no)"
+      private: false
+      default: "no"
+
+    - name: prompt_install_certbot
+      prompt: "Install Certbot for SSL/TLS certificates? (yes/no)"
+      private: false
+      default: "no"
+
+  tasks:
+    - name: Display connection information header
+      debug:
+        msg:
+          - ""
+          - "┌─────────────────────────────────────────────────────────────┐"
+          - "│           CONNECTION INFORMATION                            │"
+          - "└─────────────────────────────────────────────────────────────┘"
+
+    - name: Display connection details
+      debug:
+        msg: "{{ item }}"
+      loop:
+        - "  Target Server: \033[1;36m{{ target_ip }}\033[0m"
+        - "  SSH User:      \033[1;36m{{ target_user }}\033[0m"
+        - "  SSH Key:       \033[1;36m{{ ssh_key_path }}\033[0m"
+
+    - name: Display features header
+      debug:
+        msg:
+          - ""
+          - "┌─────────────────────────────────────────────────────────────┐"
+          - "│           SELECTED FEATURES                                 │"
+          - "└─────────────────────────────────────────────────────────────┘"
+
+    - name: Display selected features with visual indicators
+      debug:
+        msg: "{{ item }}"
+      loop:
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_enable_fail2ban | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Fail2ban Intrusion Prevention"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_docker | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Docker & Docker Compose"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_lemp | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} LEMP Stack (Nginx, MySQL, PHP)"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_enable_swap | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Swap Memory Configuration"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_enable_cron_jobs | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Automated Cron Jobs"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_dev_tools | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Development Tools"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_wordpress | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} WordPress CMS"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_certbot | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Certbot SSL/TLS Certificates"
+        - ""
+
+    - name: Display feature summary
+      debug:
+        msg: "  \033[1;33m▸\033[0m Total features enabled: {{ feature_count }}"
+      vars:
+        feature_count: "{{ [prompt_enable_fail2ban, prompt_install_docker, prompt_install_lemp, prompt_enable_swap, prompt_enable_cron_jobs, prompt_install_dev_tools, prompt_install_wordpress, prompt_install_certbot] | select('match', '^(yes|y|true)$') | list | length }}"
+
+    - name: Validate WordPress prerequisites
+      fail:
+        msg: "ERROR: WordPress requires LEMP stack to be installed. Please enable LEMP stack if you want to install WordPress."
+      when:
+        - prompt_install_wordpress | lower in ['yes', 'y', 'true']
+        - prompt_install_lemp | lower not in ['yes', 'y', 'true']
+
+    - name: Validate Certbot prerequisites
+      debug:
+        msg: "WARNING: Certbot works best with Nginx (LEMP stack). Ensure a web server is available."
+      when:
+        - prompt_install_certbot | lower in ['yes', 'y', 'true']
+        - prompt_install_lemp | lower not in ['yes', 'y', 'true']
+
+    - name: Add target server to inventory dynamically
+      add_host:
+        name: "{{ target_ip }}"
+        groups: provisioning_target
+        ansible_host: "{{ target_ip }}"
+        ansible_user: "{{ target_user }}"
+        ansible_ssh_private_key_file: "{{ ssh_key_path }}"
+        ansible_python_interpreter: /usr/bin/python3
+        # Store IP for fail2ban whitelist
+        ip_address: "{{ target_ip }}"
+        # Pass feature selection flags to Play 2
+        enable_fail2ban: "{{ prompt_enable_fail2ban | lower in ['yes', 'y', 'true'] }}"
+        install_docker: "{{ prompt_install_docker | lower in ['yes', 'y', 'true'] }}"
+        install_lemp: "{{ prompt_install_lemp | lower in ['yes', 'y', 'true'] }}"
+        enable_swap: "{{ prompt_enable_swap | lower in ['yes', 'y', 'true'] }}"
+        enable_cron_jobs: "{{ prompt_enable_cron_jobs | lower in ['yes', 'y', 'true'] }}"
+        install_dev_tools: "{{ prompt_install_dev_tools | lower in ['yes', 'y', 'true'] }}"
+        install_wordpress: "{{ prompt_install_wordpress | lower in ['yes', 'y', 'true'] }}"
+        install_certbot: "{{ prompt_install_certbot | lower in ['yes', 'y', 'true'] }}"
+
+    - name: Test SSH connection to target server
+      wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        timeout: 10
+      delegate_to: localhost
+
+# =============================================================================
+# PLAY 2: Main Server Provisioning
+# =============================================================================
+# Purpose: Complete Ubuntu server setup with all roles
+- name: Ubuntu Server Setup and Configuration
+  hosts: provisioning_target
+  become: true
+  gather_facts: true
+
   vars_files:
     - vars/default.yml
-  
+
   pre_tasks:
+    - name: Display provisioning header
+      debug:
+        msg:
+          - ""
+          - "╔═════════════════════════════════════════════════════════════╗"
+          - "║         UBUNTU SERVER PROVISIONING STARTED                  ║"
+          - "╚═════════════════════════════════════════════════════════════╝"
+      tags:
+        - always
+
+    - name: Display target server information
+      debug:
+        msg:
+          - "  \033[1;36m▸\033[0m Target Host:  \033[1;33m{{ inventory_hostname }}\033[0m"
+          - "  \033[1;36m▸\033[0m OS:           \033[1;33m{{ ansible_distribution }} {{ ansible_distribution_version }}\033[0m"
+          - "  \033[1;36m▸\033[0m Architecture: \033[1;33m{{ ansible_architecture }}\033[0m"
+          - ""
+      tags:
+        - always
+
+    - name: Display active features header
+      debug:
+        msg:
+          - "┌─────────────────────────────────────────────────────────────┐"
+          - "│           ACTIVE FEATURES FOR THIS RUN                      │"
+          - "└─────────────────────────────────────────────────────────────┘"
+      tags:
+        - always
+
+    - name: Display active feature flags
+      debug:
+        msg: "{{ item }}"
+      loop:
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_fail2ban | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Fail2ban Intrusion Prevention"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_docker | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Docker & Docker Compose"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_lemp | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  LEMP Stack"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_swap | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Swap Memory"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_cron_jobs | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Cron Jobs"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_dev_tools | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Development Tools"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_wordpress | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  WordPress"
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_certbot | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Certbot"
+        - ""
+      tags:
+        - always
+
     - name: Check for Docker repository conflicts
       command: grep -l "download.docker.com" /etc/apt/sources.list /etc/apt/sources.list.d/*.list
       register: docker_repo_check
@@ -35,97 +233,85 @@
             - /etc/apt/keyrings/docker.gpg
             - /etc/apt/keyrings/docker.asc
             - /usr/share/keyrings/docker-archive-keyring.gpg
-        
+
         - name: Find all Docker repository files
           ansible.builtin.find:
             paths: /etc/apt/sources.list.d
             patterns: "*docker*.list"
           register: docker_repo_files
-        
+
         - name: Remove all Docker repository files
           ansible.builtin.file:
             path: "{{ item.path }}"
             state: absent
           loop: "{{ docker_repo_files.files }}"
-        
+
         - name: Remove Docker entries from sources.list
           ansible.builtin.lineinfile:
             path: /etc/apt/sources.list
             regexp: .*download.docker.com.*
             state: absent
-        
+
         - name: Clean apt cache
           command: apt-get clean
           changed_when: false
       when: docker_repo_check.rc == 0
       tags:
         - always
-    
+
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
       tags:
         - always
-    
-    - name: Display playbook execution information
-      ansible.builtin.debug:
-        msg: "Running playbook for {{ ansible_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})"
-      tags:
-        - always
-        
-    - name: Ensure fail2ban is installed
+
+    - name: Ensure fail2ban is installed (required by external role)
       ansible.builtin.apt:
         name: fail2ban
         state: present
+      when: enable_fail2ban | bool
       tags:
-        - security
-        - fail2ban
-  
+        - always
+
   roles:
-    # Base system setup (users, packages, timezone, etc.)
+    # Core system setup
     - role: base_setup
       tags:
         - base
         - setup
 
-    # Swap configuration (auto-sizes based on RAM)
+    # Swap configuration
     - role: swap
       tags:
         - swap
         - system
       when: enable_swap | default(true) | bool
 
-    # Security hardening (SSH, firewall, fail2ban)
+    # Security hardening
     - role: security
       tags:
         - security
 
-    # Fail2ban (external role)
+    # Fail2ban intrusion prevention
     - role: oefenweb.fail2ban
       tags:
-        - security
         - fail2ban
+        - security
+      when: enable_fail2ban | bool
       vars:
+        fail2ban_services:
+          - name: sshd
+            port: ssh
+            filter: sshd
+            logpath: /var/log/auth.log
+            maxretry: "{{ fail2ban_maxretry }}"
+            findtime: "{{ fail2ban_findtime }}"
+            bantime: "{{ fail2ban_bantime }}"
         fail2ban_ignoreips:
           - "{{ ansible_lo['ipv4']['address'] }}/8"
           - "{{ ansible_default_ipv4['address'] }}"
-          - "{{ address }}"
-        fail2ban_bantime: 86400  # 24 hours
-        fail2ban_findtime: 600   # 10 minutes
-        fail2ban_services:
-          - name: "{{ fail2ban_ssh_service_name }}"
-            maxretry: 3
-            ignoreip:
-              - "{{ ansible_lo['ipv4']['address'] }}/8"
-              - "{{ ansible_default_ipv4['address'] }}"
-              - "{{ address }}"
-          - name: "{{ fail2ban_ssh_service_name }}-ddos"
-            maxretry: 3
-            ignoreip:
-              - "{{ ansible_lo['ipv4']['address'] }}/8"
-              - "{{ ansible_default_ipv4['address'] }}"
-              - "{{ address }}"
+          - "{{ ip_address }}"
 
     # Docker installation (optional)
     - role: docker
@@ -177,21 +363,33 @@
         path: /var/run/reboot-required
       tags:
         - always
-    
-    - name: Reboot if required
-      reboot:
-        msg: Reboot initiated by Ansible due to kernel updates
-        connect_timeout: 5
+
+    - name: Display provisioning completion header
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔═════════════════════════════════════════════════════════════╗"
+          - "║         PROVISIONING COMPLETED SUCCESSFULLY                 ║"
+          - "╚═════════════════════════════════════════════════════════════╝"
+      tags:
+        - always
+
+    - name: Display reboot requirement status
+      ansible.builtin.debug:
+        msg: "{{ item }}"
+      loop:
+        - "{{ '\033[1;33m⚠\033[0m  \033[1;33mWARNING:\033[0m Reboot is REQUIRED (kernel or system updates)' if reboot_required_file.stat.exists else '\033[1;32m✓\033[0m  System Status: \033[1;32mNo reboot required\033[0m' }}"
+        - "{{ '  \033[1;36m▸\033[0m Run with tag \033[1;36m-t reboot\033[0m to reboot now' if reboot_required_file.stat.exists else '' }}"
+      when: item != ""
+      tags:
+        - always
+
+    - name: Reboot the server if required
+      ansible.builtin.reboot:
+        msg: "Reboot initiated by Ansible due to kernel updates"
         reboot_timeout: 300
-        pre_reboot_delay: 0
         post_reboot_delay: 30
       when: reboot_required_file.stat.exists
       tags:
         - never
         - reboot
-    
-    - name: Final system info
-      ansible.builtin.debug:
-        msg: Setup complete! System is ready.
-      tags:
-        - always

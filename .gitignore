@@ -129,4 +129,7 @@ password.txt
 .LSOverride
 
 # History files
-.history/
+.history/.venv/
+
+# GUI configuration cache
+.gui_config_cache.json
