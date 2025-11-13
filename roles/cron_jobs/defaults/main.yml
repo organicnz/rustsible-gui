@@ -1,0 +1,16 @@
+---
+# Default variables for cron jobs
+
+# Enable/disable specific cron jobs
+enable_unattended_upgrades: true
+enable_auto_updates: true
+enable_periodic_reboot: false  # DISABLED by default - reboots every 6 hours is aggressive!
+
+# Cron job schedules
+cron_unattended_upgrade_minute: "1"
+cron_unattended_upgrade_hour: "*/48"  # Every 48 hours
+
+cron_system_update_minute: "1"
+cron_system_update_hour: "*/48"  # Every 48 hours
+
+cron_reboot_hour: "*/6"  # Every 6 hours (only if enabled)

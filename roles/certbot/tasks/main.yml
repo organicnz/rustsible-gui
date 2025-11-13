@@ -1,0 +1,422 @@
+---
+# =============================================================================
+# CERTBOT SSL/TLS CERTIFICATE AUTOMATION ROLE
+# =============================================================================
+# Purpose: Automated Let's Encrypt SSL/TLS certificate management using Certbot
+#          with automatic renewal and Nginx integration
+#
+# Features:
+#   - Automated Let's Encrypt certificate installation
+#   - Nginx plugin for seamless integration
+#   - Automatic HTTPS redirect configuration
+#   - Auto-renewal cron job setup
+#   - Multiple domain and subdomain support
+#   - Production-ready SSL/TLS settings
+#
+# Requirements:
+#   - Nginx must be installed and running
+#   - Domain must point to server IP (DNS configured)
+#   - Port 80 and 443 must be accessible
+#   - Valid email address for Let's Encrypt notifications
+#
+# Selectable Tags:
+#   - certbot          : All Certbot tasks
+#   - certbot-install  : Certbot installation
+#   - certbot-cert     : Certificate generation
+#   - certbot-renew    : Renewal configuration
+#   - ssl              : SSL/TLS related tasks
+#
+# Variable Requirements:
+#   - full_domain: Primary domain name (e.g., example.com)
+#   - certbot_email: Email for Let's Encrypt notifications
+#   - certbot_create_standalone_cert: Use standalone method (default: false)
+#   - certbot_auto_renew: Enable automatic renewal (default: true)
+#
+# Example Usage:
+#   # Install Certbot and generate certificate
+#   ansible-playbook playbook.yml --tags certbot
+#
+#   # Only install Certbot (no certificate generation)
+#   ansible-playbook playbook.yml --tags certbot-install
+#
+#   # Force certificate renewal
+#   ansible-playbook playbook.yml --tags certbot-renew -e "force_renew=true"
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: Certbot Installation
+# -----------------------------------------------------------------------------
+# Installs Certbot with Nginx plugin for automated SSL configuration.
+
+- name: "Certbot | Install Certbot and Nginx plugin"
+  block:
+    - name: "Certbot | Install python3-certbot-nginx package"
+      # python3-certbot-nginx provides:
+      # - Certbot core functionality
+      # - Nginx plugin for automatic configuration
+      # - Integration with Let's Encrypt ACME protocol
+      # - Automatic HTTPS redirect setup
+      # - Auto-renewal capabilities
+      #
+      # Benefits of Nginx plugin:
+      # - Automatically modifies Nginx configuration
+      # - Sets up SSL/TLS certificates
+      # - Configures HTTPS redirect
+      # - Handles certificate renewal without manual intervention
+      ansible.builtin.apt:
+        name: python3-certbot-nginx
+        state: present
+        update_cache: yes
+      tags:
+        - certbot
+        - certbot-install
+        - ssl
+        - security
+
+    - name: "Certbot | Verify Certbot installation"
+      # Checks Certbot version to confirm successful installation.
+      # changed_when: false prevents marking as "changed" in output.
+      ansible.builtin.command: certbot --version
+      register: certbot_version
+      changed_when: false
+      tags:
+        - certbot
+        - certbot-install
+        - validation
+
+    - name: "Certbot | Display installation success"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "CERTBOT INSTALLED SUCCESSFULLY"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "{{ certbot_version.stdout }}"
+          - ""
+          - "Next steps:"
+          - "1. Ensure DNS points to this server"
+          - "2. Set certbot_email in vars/default.yml"
+          - "3. Run certificate generation task"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - certbot
+        - certbot-install
+
+  rescue:
+    - name: "Error Handler | Certbot installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CERTBOT INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Package repository issues
+          - Network connectivity problems
+          - Conflicting Python packages
+          - Snap version conflict (Ubuntu may prefer snap certbot)
+
+          Troubleshooting steps:
+          1. Check package availability:
+             apt-cache search certbot
+          2. Verify network connectivity:
+             ping packages.ubuntu.com
+          3. Check for snap certbot:
+             snap list | grep certbot
+          4. Remove snap certbot if installed:
+             sudo snap remove certbot
+          5. Update package cache:
+             sudo apt update
+
+          Manual installation:
+          sudo apt update
+          sudo apt install python3-certbot-nginx
+
+          Alternative installation (snap):
+          sudo snap install --classic certbot
+          sudo ln -s /snap/bin/certbot /usr/bin/certbot
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 2: SSL Certificate Generation
+# -----------------------------------------------------------------------------
+# Generates Let's Encrypt SSL certificate using Certbot Nginx plugin.
+# ONLY runs when certbot_email is defined and domain is ready.
+
+- name: "SSL Certificate | Generate Let's Encrypt certificate"
+  block:
+    - name: "SSL Certificate | Check if certificate already exists"
+      # Checks for existing certificate to prevent duplicate requests.
+      # Let's Encrypt has rate limits (5 duplicate certs per week).
+      # Idempotent: Won't request new cert if valid one exists.
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ full_domain }}/fullchain.pem"
+      register: cert_exists
+      tags:
+        - certbot
+        - certbot-cert
+        - ssl
+
+    - name: "SSL Certificate | Display certificate status"
+      ansible.builtin.debug:
+        msg:
+          - "Certificate status for {{ full_domain }}:"
+          - "{% if cert_exists.stat.exists %}Exists: Certificate already issued{% else %}Not found: Will request new certificate{% endif %}"
+      tags:
+        - certbot
+        - certbot-cert
+
+    - name: "SSL Certificate | Request certificate via Certbot (Nginx plugin)"
+      # Requests SSL certificate from Let's Encrypt using Nginx plugin.
+      # Certbot will:
+      # 1. Verify domain ownership via HTTP-01 challenge
+      # 2. Generate private key and CSR
+      # 3. Request certificate from Let's Encrypt
+      # 4. Install certificate in Nginx configuration
+      # 5. Set up automatic HTTPS redirect
+      #
+      # Requirements:
+      # - Port 80 must be accessible (for verification)
+      # - DNS must point to this server
+      # - Valid email required for expiration notifications
+      #
+      # Options explained:
+      # --nginx: Use Nginx plugin (auto-configure Nginx)
+      # --non-interactive: No prompts (required for automation)
+      # --agree-tos: Agree to Let's Encrypt Terms of Service
+      # --email: Contact email for expiration notices
+      # -d: Domain to secure (supports multiple domains)
+      # --redirect: Automatically redirect HTTP to HTTPS
+      ansible.builtin.command: >
+        certbot --nginx
+        --non-interactive
+        --agree-tos
+        --email {{ certbot_email }}
+        -d {{ full_domain }}
+        {% if certbot_www_domain | default(true) %}-d www.{{ full_domain }}{% endif %}
+        --redirect
+      when:
+        - not cert_exists.stat.exists or force_renew | default(false) | bool
+        - certbot_email is defined
+      register: certbot_output
+      tags:
+        - certbot
+        - certbot-cert
+        - ssl
+        - security
+
+    - name: "SSL Certificate | Display certificate generation result"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "SSL CERTIFICATE GENERATED SUCCESSFULLY"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Domain: {{ full_domain }}"
+          - "WWW Domain: {% if certbot_www_domain | default(true) %}www.{{ full_domain }}{% else %}Not configured{% endif %}"
+          - "Certificate: /etc/letsencrypt/live/{{ full_domain }}/fullchain.pem"
+          - "Private Key: /etc/letsencrypt/live/{{ full_domain }}/privkey.pem"
+          - ""
+          - "HTTPS is now enabled!"
+          - "Visit: https://{{ full_domain }}"
+          - ""
+          - "Auto-renewal configured (runs twice daily)"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      when: certbot_output is defined and certbot_output.changed
+      tags:
+        - certbot
+        - certbot-cert
+
+  rescue:
+    - name: "Error Handler | Certificate generation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          SSL CERTIFICATE GENERATION FAILED
+          ============================================================
+
+          Possible causes:
+          - DNS not pointing to this server
+          - Port 80 or 443 not accessible (firewall/cloud security group)
+          - Rate limit exceeded (5 certs per week per domain)
+          - Invalid email address
+          - Nginx not running or misconfigured
+          - Domain ownership verification failed
+
+          Troubleshooting steps:
+          1. Verify DNS points to server:
+             dig {{ full_domain | default('your-domain.com') }} +short
+             (should show: {{ ansible_default_ipv4['address'] | default('your-server-ip') }})
+
+          2. Test port 80 accessibility:
+             curl http://{{ full_domain | default('your-domain.com') }}
+
+          3. Check Nginx is running:
+             systemctl status nginx
+
+          4. Test Nginx configuration:
+             nginx -t
+
+          5. Check Certbot dry run:
+             certbot --nginx --dry-run -d {{ full_domain | default('your-domain.com') }}
+
+          6. View Certbot logs:
+             cat /var/log/letsencrypt/letsencrypt.log
+
+          7. Check rate limits:
+             https://crt.sh/?q={{ full_domain | default('your-domain.com') }}
+
+          Common fixes:
+          - Wait 1 hour if rate limited
+          - Ensure port 80 is open: ufw allow 80
+          - Restart Nginx: systemctl restart nginx
+          - Use dry run mode first: --dry-run
+          ============================================================
+
+  when: certbot_email is defined
+  tags:
+    - certbot
+    - certbot-cert
+    - ssl
+
+# -----------------------------------------------------------------------------
+# SECTION 3: Automatic Certificate Renewal
+# -----------------------------------------------------------------------------
+# Configures automatic certificate renewal using systemd timer.
+# Certbot automatically installs renewal timer on Ubuntu 20.04+.
+
+- name: "SSL Renewal | Configure automatic certificate renewal"
+  block:
+    - name: "SSL Renewal | Check if Certbot timer exists"
+      # Certbot package includes systemd timer for auto-renewal.
+      # Timer runs twice daily to check and renew certificates.
+      # Certificates renewed automatically 30 days before expiration.
+      ansible.builtin.systemd:
+        name: certbot.timer
+        state: started
+        enabled: yes
+      tags:
+        - certbot
+        - certbot-renew
+        - automation
+
+    - name: "SSL Renewal | Test renewal process (dry run)"
+      # Tests renewal without actually renewing certificates.
+      # Verifies renewal will work when certificates near expiration.
+      # Safe to run: doesn't count toward rate limits.
+      ansible.builtin.command: certbot renew --dry-run
+      register: renewal_test
+      changed_when: false
+      failed_when: false
+      tags:
+        - certbot
+        - certbot-renew
+        - validation
+
+    - name: "SSL Renewal | Display renewal configuration"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "AUTOMATIC SSL RENEWAL CONFIGURED"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Renewal method: systemd timer (certbot.timer)"
+          - "Check frequency: Twice daily"
+          - "Renewal threshold: 30 days before expiration"
+          - ""
+          - "Dry run test: {% if renewal_test.rc == 0 %}PASSED ✓{% else %}FAILED (check logs){% endif %}"
+          - ""
+          - "Manual renewal command:"
+          - "  sudo certbot renew"
+          - ""
+          - "Check certificate status:"
+          - "  sudo certbot certificates"
+          - ""
+          - "View renewal timer status:"
+          - "  systemctl status certbot.timer"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - certbot
+        - certbot-renew
+
+  rescue:
+    - name: "Error Handler | Renewal configuration failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          SSL RENEWAL CONFIGURATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Certbot timer not installed
+          - systemd not running
+          - Renewal test failed (DNS, firewall, etc.)
+
+          Troubleshooting steps:
+          1. Check timer exists:
+             systemctl list-timers | grep certbot
+          2. View timer status:
+             systemctl status certbot.timer
+          3. Check renewal configuration:
+             cat /etc/letsencrypt/renewal/*.conf
+          4. Test renewal manually:
+             certbot renew --dry-run
+          5. View renewal logs:
+             journalctl -u certbot.timer
+
+          Manual renewal setup (if timer missing):
+          # Create cron job for renewal
+          echo "0 0,12 * * * root certbot renew --quiet" > /etc/cron.d/certbot-renew
+
+          Enable timer:
+          systemctl enable certbot.timer
+          systemctl start certbot.timer
+          ============================================================
+
+  when:
+    - certbot_auto_renew | default(true) | bool
+  tags:
+    - certbot
+    - certbot-renew
+
+# =============================================================================
+# CERTBOT SSL/TLS USAGE TIPS
+# =============================================================================
+#
+# Initial certificate generation:
+#   ansible-playbook playbook.yml --tags certbot
+#   (Requires: certbot_email set in vars/default.yml)
+#
+# Check certificate status:
+#   sudo certbot certificates
+#
+# Manual renewal:
+#   sudo certbot renew
+#
+# Test renewal (dry run):
+#   sudo certbot renew --dry-run
+#
+# Force certificate renewal:
+#   ansible-playbook playbook.yml --tags certbot-cert -e "force_renew=true"
+#
+# View certificate expiration:
+#   echo | openssl s_client -connect {{ full_domain | default('your-domain.com') }}:443 2>/dev/null | openssl x509 -noout -dates
+#
+# Required variables (vars/default.yml):
+#   certbot_email: your-email@example.com
+#   full_domain: example.com
+#
+# Optional variables:
+#   certbot_www_domain: true  # Also secure www.example.com
+#   certbot_auto_renew: true  # Enable automatic renewal
+#   force_renew: false        # Force renewal even if cert exists
+#
+# Disable automatic renewal:
+#   systemctl stop certbot.timer
+#   systemctl disable certbot.timer
+#
+# Re-enable automatic renewal:
+#   systemctl enable certbot.timer
+#   systemctl start certbot.timer
+#
+# View renewal timer schedule:
+#   systemctl list-timers certbot.timer
+#
+# =============================================================================

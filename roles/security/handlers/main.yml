@@ -2,19 +2,19 @@
 # Handlers for security role
 
 - name: restart ssh
-  service:
+  ansible.builtin.service:
     name: ssh
     state: restarted
   become: true
 
 - name: restart fail2ban
-  service:
+  ansible.builtin.service:
     name: fail2ban
     state: restarted
   become: true
 
 - name: reload ufw
-  service:
+  ansible.builtin.service:
     name: ufw
     state: reloaded
   become: true 

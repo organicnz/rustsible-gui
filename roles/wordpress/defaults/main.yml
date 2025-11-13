@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# WordPress Role Default Variables
+# =============================================================================
+# These are default values that can be overridden in vars/default.yml or
+# vars/vault.yml for production deployments.
+#
+# IMPORTANT: Override sensitive values (passwords) in vars/vault.yml
+# =============================================================================
+
+# WordPress Database Configuration
+# -----------------------------------------------------------------------------
+# Database name for WordPress installation
+mysql_db: wordpress_db
+
+# Database username for WordPress
+mysql_user: wordpress_user
+
+# Database password - OVERRIDE IN VAULT!
+# DO NOT leave this as default in production
+# mysql_password: MUST_BE_DEFINED_IN_VAULT
+
+# MySQL root password - OVERRIDE IN VAULT!
+# Required for creating database and user
+# mysql_root_password: MUST_BE_DEFINED_IN_VAULT
+
+# Domain Configuration
+# -----------------------------------------------------------------------------
+# Full domain name for WordPress site
+# Examples: example.com, www.example.com, blog.example.com
+# REQUIRED - no default provided
+# full_domain: MUST_BE_DEFINED
+
+# WordPress Installation Path
+# -----------------------------------------------------------------------------
+# Base directory for website
+wordpress_base_path: "/var/www/{{ full_domain }}"
+
+# WordPress installation directory
+wordpress_path: "{{ wordpress_base_path }}/wordpress"
+
+# File Permissions
+# -----------------------------------------------------------------------------
+# Directory permissions (rwxr-x---)
+# Owner: full access, Group: read+execute, Others: no access
+wordpress_dir_permissions: '0750'
+
+# File permissions (rw-r-----)
+# Owner: read+write, Group: read, Others: no access
+wordpress_file_permissions: '0640'
+
+# Web server user and group
+wordpress_owner: www-data
+wordpress_group: www-data
+
+# WordPress Download Source
+# -----------------------------------------------------------------------------
+# Official WordPress download URL (always latest stable)
+wordpress_download_url: https://wordpress.org/latest.tar.gz
+
+# Feature Flags
+# -----------------------------------------------------------------------------
+# Enable WordPress installation
+install_wordpress: false
+
+# Skip WordPress if already installed (idempotent)
+wordpress_skip_if_exists: true

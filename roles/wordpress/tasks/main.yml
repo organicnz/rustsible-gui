@@ -1,0 +1,554 @@
+---
+# =============================================================================
+# WORDPRESS DEPLOYMENT ROLE
+# =============================================================================
+# Purpose: Deploy production-ready WordPress installation with optimized
+#          configuration, security hardening, and proper file permissions
+#
+# Features:
+#   - Automated WordPress download and extraction
+#   - MySQL database creation and user management
+#   - Security-hardened file permissions (750/640)
+#   - Auto-generated WordPress security salts
+#   - Production-ready wp-config.php configuration
+#   - SEO-optimized robots.txt
+#   - PHP optimization with .user.ini
+#   - Clean URL configuration with .htaccess
+#
+# Requirements:
+#   - LEMP stack must be installed (Nginx, MySQL, PHP-FPM)
+#   - MySQL root credentials configured (from LEMP role)
+#   - Domain name configured in variables
+#
+# Selectable Tags:
+#   - wordpress           : All WordPress tasks
+#   - wordpress-install   : WordPress download and extraction
+#   - wordpress-config    : Configuration file generation
+#   - wordpress-db        : Database creation and user setup
+#   - wordpress-perms     : File permissions and ownership
+#   - wordpress-nginx     : Nginx virtual host configuration
+#
+# Variable Requirements:
+#   - full_domain: Full domain name (e.g., example.com or www.example.com)
+#   - mysql_db: WordPress database name (default: wordpress_db)
+#   - mysql_user: WordPress database user (default: wordpress_user)
+#   - mysql_password: WordPress database password (use Ansible Vault!)
+#   - mysql_root_password: MySQL root password for DB creation
+#
+# Example Usage:
+#   # Full WordPress deployment
+#   ansible-playbook playbook.yml --tags wordpress
+#
+#   # Only configure WordPress (skip download)
+#   ansible-playbook playbook.yml --tags wordpress-config
+#
+#   # Only fix permissions
+#   ansible-playbook playbook.yml --tags wordpress-perms
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: WordPress Database Setup
+# -----------------------------------------------------------------------------
+# Creates dedicated MySQL database and user for WordPress.
+# Follows principle of least privilege - WordPress user has access only to
+# its own database, not entire MySQL server.
+
+- name: "WordPress Database | Create MySQL database and user"
+  block:
+    - name: "WordPress Database | Create WordPress MySQL database"
+      # Creates dedicated database for WordPress installation.
+      # Uses UTF-8 encoding for international character support.
+      # utf8mb4 supports full Unicode including emoji (4-byte characters).
+      community.mysql.mysql_db:
+        name: "{{ mysql_db | default('wordpress_db') }}"
+        state: present
+        encoding: utf8mb4
+        collation: utf8mb4_unicode_ci
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      when: mysql_root_password is defined
+      tags:
+        - wordpress
+        - wordpress-db
+        - database
+
+    - name: "WordPress Database | Create WordPress MySQL user with database privileges"
+      # Creates MySQL user with full access to WordPress database only.
+      # Principle of least privilege: User cannot access other databases.
+      # Privileges granted:
+      # - ALL: Full control over WordPress database
+      # - No SUPER privilege: Cannot modify server settings
+      # - No FILE privilege: Cannot read/write server files
+      community.mysql.mysql_user:
+        name: "{{ mysql_user | default('wordpress_user') }}"
+        password: "{{ mysql_password }}"
+        priv: "{{ mysql_db | default('wordpress_db') }}.*:ALL"
+        host: localhost
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      when:
+        - mysql_root_password is defined
+        - mysql_password is defined
+      tags:
+        - wordpress
+        - wordpress-db
+        - database
+        - security
+
+    - name: "WordPress Database | Display database setup success"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "WORDPRESS DATABASE CREATED"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Database: {{ mysql_db | default('wordpress_db') }}"
+          - "User: {{ mysql_user | default('wordpress_user') }}"
+          - "Encoding: utf8mb4_unicode_ci (full Unicode support)"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - wordpress
+        - wordpress-db
+
+  rescue:
+    - name: "Error Handler | WordPress database creation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          WORDPRESS DATABASE CREATION FAILED
+          ============================================================
+
+          Possible causes:
+          - MySQL not running or accessible
+          - Incorrect MySQL root password
+          - mysql_root_password not defined in vault
+          - mysql_password not defined in vault
+          - community.mysql collection not installed
+          - Database or user already exists with different settings
+
+          Troubleshooting steps:
+          1. Verify MySQL is running: systemctl status mysql
+          2. Test MySQL root login: mysql -u root -p
+          3. Check vault variables: ansible-vault view vars/vault.yml
+          4. Install MySQL collection:
+             ansible-galaxy collection install community.mysql
+          5. Check existing databases: mysql -u root -p -e "SHOW DATABASES;"
+          6. Check existing users:
+             mysql -u root -p -e "SELECT User, Host FROM mysql.user;"
+
+          Manual database creation:
+          mysql -u root -p
+          CREATE DATABASE {{ mysql_db | default('wordpress_db') }} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER '{{ mysql_user | default('wordpress_user') }}'@'localhost' IDENTIFIED BY 'your_password';
+          GRANT ALL PRIVILEGES ON {{ mysql_db | default('wordpress_db') }}.* TO '{{ mysql_user | default('wordpress_user') }}'@'localhost';
+          FLUSH PRIVILEGES;
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 2: WordPress Installation
+# -----------------------------------------------------------------------------
+# Downloads and extracts WordPress to web root directory.
+
+- name: "WordPress Install | Download and extract WordPress core files"
+  block:
+    - name: "WordPress Install | Create website root directory"
+      # Creates directory structure: /var/www/example.com/
+      # Will contain WordPress files in wordpress/ subdirectory.
+      # Standard location for web content on Ubuntu/Debian.
+      ansible.builtin.file:
+        path: "/var/www/{{ full_domain }}"
+        state: directory
+        mode: '0755'
+      tags:
+        - wordpress
+        - wordpress-install
+        - filesystem
+
+    - name: "WordPress Install | Download and extract WordPress from wordpress.org"
+      # Downloads latest stable WordPress release (always latest.tar.gz).
+      # remote_src: yes means download directly to remote server.
+      # creates: Prevents re-download if WordPress already extracted.
+      #
+      # WordPress is extracted to: /var/www/example.com/wordpress/
+      # Benefits:
+      # - Always latest security patches
+      # - Official distribution (trusted source)
+      # - Includes all core files and default themes
+      ansible.builtin.unarchive:
+        src: https://wordpress.org/latest.tar.gz
+        dest: "/var/www/{{ full_domain }}"
+        remote_src: yes
+        creates: "/var/www/{{ full_domain }}/wordpress"
+      tags:
+        - wordpress
+        - wordpress-install
+        - download
+
+    - name: "WordPress Install | Display installation success"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "WORDPRESS DOWNLOADED AND EXTRACTED"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Installation path: /var/www/{{ full_domain }}/wordpress"
+          - "WordPress version: Latest stable release"
+          - ""
+          - "Next steps will configure permissions and settings"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - wordpress
+        - wordpress-install
+
+  rescue:
+    - name: "Error Handler | WordPress installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          WORDPRESS INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Network connectivity issues (cannot reach wordpress.org)
+          - Insufficient disk space in /var/www/
+          - Permission issues creating directories
+          - /var/www/ directory doesn't exist
+          - Firewall blocking HTTPS connections
+
+          Troubleshooting steps:
+          1. Check internet connectivity: ping wordpress.org
+          2. Test HTTPS access: curl -I https://wordpress.org/latest.tar.gz
+          3. Check disk space: df -h /var/www/
+          4. Verify /var/www exists: ls -la /var/www/
+          5. Check directory permissions: ls -la /var/
+          6. Test manual download:
+             wget https://wordpress.org/latest.tar.gz
+
+          Manual installation:
+          cd /var/www/{{ full_domain }}
+          wget https://wordpress.org/latest.tar.gz
+          tar xzf latest.tar.gz
+          rm latest.tar.gz
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 3: File Permissions and Ownership
+# -----------------------------------------------------------------------------
+# Sets security-hardened permissions following WordPress best practices.
+# Prevents unauthorized file modifications and information disclosure.
+
+- name: "WordPress Security | Set proper ownership and permissions"
+  block:
+    - name: "WordPress Security | Set ownership to www-data (Nginx/PHP-FPM user)"
+      # www-data is the default web server user on Ubuntu/Debian.
+      # Nginx and PHP-FPM run as www-data for security isolation.
+      # Recursive: yes ensures all files and subdirectories are updated.
+      #
+      # Why www-data ownership:
+      # - PHP-FPM needs to read WordPress files
+      # - WordPress needs to write uploads, cache, temp files
+      # - Prevents other users from accessing WordPress files
+      ansible.builtin.file:
+        path: "/var/www/{{ full_domain }}"
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+      tags:
+        - wordpress
+        - wordpress-perms
+        - security
+        - permissions
+
+    - name: "WordPress Security | Set directory permissions to 750 (rwxr-x---)"
+      # Directory permissions: 750
+      # - Owner (www-data): Full access (read/write/execute)
+      # - Group (www-data): Read and execute (can browse, cannot write)
+      # - Others: No access (maximum security)
+      #
+      # Execute permission on directories:
+      # - Required to enter directory (cd into it)
+      # - Required to list directory contents
+      # - Does not allow executing files inside
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d -exec chmod 750 {} \\;"
+      tags:
+        - wordpress
+        - wordpress-perms
+        - security
+        - permissions
+
+    - name: "WordPress Security | Set file permissions to 640 (rw-r-----)"
+      # File permissions: 640
+      # - Owner (www-data): Read and write
+      # - Group (www-data): Read only
+      # - Others: No access
+      #
+      # More restrictive than WordPress default 644:
+      # - Prevents other users from reading wp-config.php
+      # - Protects sensitive configuration and credentials
+      # - Still allows PHP-FPM to read and execute files
+      #
+      # Note: PHP files don't need execute permission
+      # PHP interpreter reads and interprets them
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f -exec chmod 640 {} \\;"
+      tags:
+        - wordpress
+        - wordpress-perms
+        - security
+        - permissions
+
+    - name: "WordPress Security | Display permissions summary"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "WORDPRESS PERMISSIONS CONFIGURED"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Owner/Group: www-data:www-data"
+          - "Directory permissions: 750 (rwxr-x---)"
+          - "File permissions: 640 (rw-r-----)"
+          - ""
+          - "Security benefits:"
+          - "- Prevents unauthorized file access"
+          - "- Protects wp-config.php credentials"
+          - "- Allows PHP-FPM to run WordPress properly"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - wordpress
+        - wordpress-perms
+
+  rescue:
+    - name: "Error Handler | WordPress permissions setup failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          WORDPRESS PERMISSIONS SETUP FAILED
+          ============================================================
+
+          Possible causes:
+          - WordPress directory doesn't exist yet
+          - Insufficient privileges (need root/sudo)
+          - www-data user doesn't exist on system
+          - Files are locked or in use
+          - Filesystem mounted read-only
+
+          Troubleshooting steps:
+          1. Verify WordPress installed:
+             ls -la /var/www/{{ full_domain }}/wordpress/
+          2. Check www-data user exists:
+             id www-data
+          3. Verify running as root:
+             whoami
+          4. Check filesystem mount:
+             mount | grep /var/www
+          5. Check file locks:
+             lsof /var/www/{{ full_domain }}/
+
+          Manual permission fix:
+          cd /var/www/{{ full_domain }}
+          sudo chown -R www-data:www-data wordpress/
+          sudo find wordpress/ -type d -exec chmod 750 {} \;
+          sudo find wordpress/ -type f -exec chmod 640 {} \;
+
+          Alternative: Use default WordPress permissions (less secure)
+          sudo find wordpress/ -type d -exec chmod 755 {} \;
+          sudo find wordpress/ -type f -exec chmod 644 {} \;
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 4: WordPress Configuration Files
+# -----------------------------------------------------------------------------
+# Deploys production-ready configuration files from templates.
+
+- name: "WordPress Config | Deploy configuration files from templates"
+  block:
+    - name: "WordPress Config | Generate wp-config.php from template"
+      # Deploys wp-config.php with:
+      # - Database credentials from vault
+      # - Auto-generated WordPress security salts
+      # - Production security settings
+      # - Performance optimizations
+      # - Disabled debugging (production mode)
+      #
+      # Template variables:
+      # - mysql_db: Database name
+      # - mysql_user: Database username
+      # - mysql_password: Database password (from vault)
+      # - full_domain: Site domain name
+      ansible.builtin.template:
+        src: wp-config.php.j2
+        dest: "/var/www/{{ full_domain }}/wordpress/wp-config.php"
+        owner: www-data
+        group: www-data
+        mode: '0640'
+      tags:
+        - wordpress
+        - wordpress-config
+        - config
+        - security
+
+    - name: "WordPress Config | Deploy .htaccess for clean URLs"
+      # .htaccess provides:
+      # - WordPress permalink structure (clean URLs)
+      # - Security headers
+      # - Performance optimizations
+      # - Protection for sensitive files
+      #
+      # Note: Nginx doesn't use .htaccess (Apache-specific)
+      # This file is here for compatibility if switched to Apache
+      # or for WordPress plugins that expect it.
+      ansible.builtin.template:
+        src: .htaccess
+        dest: "/var/www/{{ full_domain }}/wordpress/.htaccess"
+        owner: www-data
+        group: www-data
+        mode: '0640'
+      tags:
+        - wordpress
+        - wordpress-config
+        - config
+
+    - name: "WordPress Config | Deploy .user.ini for PHP settings"
+      # .user.ini configures PHP-FPM settings for WordPress:
+      # - Upload file size limits
+      # - Memory limits
+      # - Execution time limits
+      # - Post size limits
+      #
+      # Overrides default php.ini settings for this directory only.
+      # Takes effect after 5 minutes (default user_ini.cache_ttl).
+      ansible.builtin.template:
+        src: .user.ini
+        dest: "/var/www/{{ full_domain }}/wordpress/.user.ini"
+        owner: www-data
+        group: www-data
+        mode: '0640'
+      tags:
+        - wordpress
+        - wordpress-config
+        - config
+        - performance
+
+    - name: "WordPress Config | Deploy robots.txt for SEO"
+      # robots.txt controls search engine crawler behavior:
+      # - Allows indexing of public content
+      # - Blocks crawling of admin areas
+      # - Blocks crawling of plugin/theme files
+      # - Improves SEO by preventing duplicate content issues
+      #
+      # Deployed to WordPress root for standard SEO compliance.
+      ansible.builtin.template:
+        src: robots.txt
+        dest: "/var/www/{{ full_domain }}/wordpress/robots.txt"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      tags:
+        - wordpress
+        - wordpress-config
+        - config
+        - seo
+
+    - name: "WordPress Config | Display configuration summary"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "WORDPRESS CONFIGURATION COMPLETE"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Configuration files deployed:"
+          - "  ✓ wp-config.php (database and security settings)"
+          - "  ✓ .htaccess (URL rewriting)"
+          - "  ✓ .user.ini (PHP optimization)"
+          - "  ✓ robots.txt (SEO crawler directives)"
+          - ""
+          - "Site URL: http://{{ full_domain }}"
+          - "Admin URL: http://{{ full_domain }}/wp-admin/"
+          - ""
+          - "Next steps:"
+          - "1. Configure Nginx virtual host"
+          - "2. Install SSL certificate (Certbot)"
+          - "3. Complete WordPress installation via web"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - wordpress
+        - wordpress-config
+
+  rescue:
+    - name: "Error Handler | WordPress configuration failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          WORDPRESS CONFIGURATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Template files missing from roles/wordpress/templates/
+          - WordPress directory doesn't exist
+          - Required variables not defined (mysql_db, mysql_password, etc.)
+          - Insufficient permissions to write config files
+          - wp-config.php already exists and is write-protected
+
+          Troubleshooting steps:
+          1. Check template files exist:
+             ls -la roles/wordpress/templates/
+          2. Verify WordPress directory:
+             ls -la /var/www/{{ full_domain }}/wordpress/
+          3. Check required variables defined:
+             ansible-vault view vars/vault.yml | grep mysql
+          4. Test file write permissions:
+             touch /var/www/{{ full_domain }}/wordpress/test.txt
+          5. Check existing wp-config.php:
+             ls -la /var/www/{{ full_domain }}/wordpress/wp-config.php
+
+          Required variables in vault.yml:
+          - mysql_db (or defaults to 'wordpress_db')
+          - mysql_user (or defaults to 'wordpress_user')
+          - mysql_password (REQUIRED - no default)
+          - full_domain (REQUIRED - no default)
+
+          Manual configuration:
+          cd /var/www/{{ full_domain }}/wordpress/
+          cp wp-config-sample.php wp-config.php
+          nano wp-config.php
+          # Edit database credentials manually
+          ============================================================
+
+# =============================================================================
+# WORDPRESS DEPLOYMENT USAGE TIPS
+# =============================================================================
+#
+# Complete WordPress installation:
+#   1. Run this playbook with wordpress tag:
+#      ansible-playbook playbook.yml --tags wordpress
+#
+#   2. Configure Nginx virtual host (see wordpress-nginx tag):
+#      ansible-playbook playbook.yml --tags wordpress-nginx
+#
+#   3. Install SSL certificate:
+#      ansible-playbook playbook.yml --tags certbot
+#
+#   4. Visit http://{{ full_domain | default('your-domain.com') }}/wp-admin/install.php
+#      to complete WordPress setup
+#
+# Access WordPress:
+#   Website: http://{{ full_domain | default('your-domain.com') }}
+#   Admin: http://{{ full_domain | default('your-domain.com') }}/wp-admin/
+#
+# Required variables (define in vars/vault.yml):
+#   full_domain: example.com
+#   mysql_db: wordpress_db
+#   mysql_user: wordpress_user
+#   mysql_password: secure_password_here
+#   mysql_root_password: root_password_here
+#
+# Verify installation:
+#   ls -la /var/www/{{ full_domain | default('your-domain.com') }}/wordpress/
+#   mysql -u wordpress_user -p wordpress_db
+#
+# Fix permissions if needed:
+#   ansible-playbook playbook.yml --tags wordpress-perms
+#
+# Reinstall configuration only:
+#   ansible-playbook playbook.yml --tags wordpress-config
+#
+# =============================================================================

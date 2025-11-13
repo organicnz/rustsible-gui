@@ -1,0 +1,191 @@
+---
+# Ubuntu Server Setup Playbook
+# Modular playbook for Ubuntu server configuration with security hardening,
+# optional Docker, LEMP stack, development tools, and system optimization
+
+- hosts: all
+  become: true
+  gather_facts: true
+  vars_files:
+    - vars/default.yml
+  
+  pre_tasks:
+    - name: Check for Docker repository conflicts
+      command: grep -l "download.docker.com" /etc/apt/sources.list /etc/apt/sources.list.d/*.list
+      register: docker_repo_check
+      failed_when: false
+      changed_when: false
+      tags:
+        - always
+
+    - name: Clean Docker repository if conflicts detected
+      ansible.builtin.block:
+        - name: Remove any existing Docker apt key files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/apt/trusted.gpg.d/docker.gpg
+            - /etc/apt/keyrings/docker.gpg
+            - /etc/apt/keyrings/docker.asc
+            - /usr/share/keyrings/docker-archive-keyring.gpg
+        
+        - name: Find all Docker repository files
+          ansible.builtin.find:
+            paths: /etc/apt/sources.list.d
+            patterns: "*docker*.list"
+          register: docker_repo_files
+        
+        - name: Remove all Docker repository files
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ docker_repo_files.files }}"
+        
+        - name: Remove Docker entries from sources.list
+          ansible.builtin.lineinfile:
+            path: /etc/apt/sources.list
+            regexp: .*download.docker.com.*
+            state: absent
+        
+        - name: Clean apt cache
+          command: apt-get clean
+          changed_when: false
+      when: docker_repo_check.rc == 0
+      tags:
+        - always
+    
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags:
+        - always
+    
+    - name: Display playbook execution information
+      ansible.builtin.debug:
+        msg: "Running playbook for {{ ansible_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})"
+      tags:
+        - always
+        
+    - name: Ensure fail2ban is installed
+      ansible.builtin.apt:
+        name: fail2ban
+        state: present
+      tags:
+        - security
+        - fail2ban
+  
+  roles:
+    # Base system setup (users, packages, timezone, etc.)
+    - role: base_setup
+      tags:
+        - base
+        - setup
+
+    # Swap configuration (auto-sizes based on RAM)
+    - role: swap
+      tags:
+        - swap
+        - system
+      when: enable_swap | default(true) | bool
+
+    # Security hardening (SSH, firewall, fail2ban)
+    - role: security
+      tags:
+        - security
+
+    # Fail2ban (external role)
+    - role: oefenweb.fail2ban
+      tags:
+        - security
+        - fail2ban
+      vars:
+        fail2ban_ignoreips:
+          - "{{ ansible_lo['ipv4']['address'] }}/8"
+          - "{{ ansible_default_ipv4['address'] }}"
+          - "{{ address }}"
+        fail2ban_bantime: 86400  # 24 hours
+        fail2ban_findtime: 600   # 10 minutes
+        fail2ban_services:
+          - name: "{{ fail2ban_ssh_service_name }}"
+            maxretry: 3
+            ignoreip:
+              - "{{ ansible_lo['ipv4']['address'] }}/8"
+              - "{{ ansible_default_ipv4['address'] }}"
+              - "{{ address }}"
+          - name: "{{ fail2ban_ssh_service_name }}-ddos"
+            maxretry: 3
+            ignoreip:
+              - "{{ ansible_lo['ipv4']['address'] }}/8"
+              - "{{ ansible_default_ipv4['address'] }}"
+              - "{{ address }}"
+
+    # Docker installation (optional)
+    - role: docker
+      tags:
+        - docker
+      when: install_docker | bool
+
+    # LEMP Stack (Linux, Nginx, MySQL, PHP) - optional
+    - role: lemp
+      tags:
+        - lemp
+        - web
+      when: install_lemp | default(false) | bool
+
+    # Automated cron jobs for maintenance
+    - role: cron_jobs
+      tags:
+        - cron
+        - automation
+      when: enable_cron_jobs | default(true) | bool
+
+    # Development tools (Neovim, Node.js, Claude Code) - optional
+    - role: dev_tools
+      tags:
+        - dev
+        - development
+      when: install_dev_tools | default(false) | bool
+
+    # WordPress deployment (requires LEMP stack) - optional
+    - role: wordpress
+      tags:
+        - wordpress
+        - web
+        - cms
+      when: install_wordpress | default(false) | bool
+
+    # Certbot SSL/TLS certificate automation (requires Nginx) - optional
+    - role: certbot
+      tags:
+        - certbot
+        - ssl
+        - security
+      when: install_certbot | default(false) | bool
+
+  post_tasks:
+    - name: Check if reboot is required
+      register: reboot_required_file
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      tags:
+        - always
+    
+    - name: Reboot if required
+      reboot:
+        msg: Reboot initiated by Ansible due to kernel updates
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+      when: reboot_required_file.stat.exists
+      tags:
+        - never
+        - reboot
+    
+    - name: Final system info
+      ansible.builtin.debug:
+        msg: Setup complete! System is ready.
+      tags:
+        - always

@@ -1,67 +1,135 @@
 ---
-# Security Configuration Tasks
+# =============================================================================
+# SECURITY HARDENING ROLE
+# =============================================================================
+# Purpose: Implement comprehensive security measures including SSH hardening,
+#          firewall configuration, fail2ban setup, and system hardening
+#
+# Selectable Tags:
+#   - ssh           : SSH service hardening and configuration
+#   - ssh-port      : SSH port changes only
+#   - ssh-auth      : Authentication method changes (password/keys)
+#   - firewall      : UFW firewall configuration
+#   - ufw           : UFW-specific tasks
+#   - fail2ban      : Fail2ban intrusion prevention
+#   - hardening     : System hardening (PAM, permissions, etc.)
+#   - pam           : PAM password policy configuration
+#   - permissions   : File and directory permission hardening
+#   - ddos          : DDOS protection (optional, disabled by default)
+# =============================================================================
 
-# SSH Hardening
-- name: Configure SSH for security
-  block:
-    - name: Disable password authentication
-      lineinfile:
+# -----------------------------------------------------------------------------
+# SECTION 1: SSH Hardening
+# -----------------------------------------------------------------------------
+# Hardens SSH service to prevent unauthorized access and reduce attack surface.
+# Implements security best practices: key-based auth, no root login, non-standard port.
+
+- name: "SSH Security | Configure SSH daemon for maximum security"
+  ansible.builtin.block:
+    - name: "SSH Auth | Disable password authentication"
+      # Forces SSH key-based authentication only.
+      # Prevents brute-force password attacks and credential stuffing.
+      # Only applies if password_authentication is set to false in vars.
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         state: present
         regexp: '^#?PasswordAuthentication'
         line: 'PasswordAuthentication no'
       when: not password_authentication
       notify: restart ssh
-      
-    - name: Disable root login
-      lineinfile:
+      tags:
+        - ssh-auth
+        - password-disable
+
+    - name: "SSH Access | Disable root login via SSH"
+      # Prevents direct root access over SSH.
+      # Enforces use of non-privileged accounts with sudo for auditability.
+      # Only applies if disable_root_login is true in vars.
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         state: present
         regexp: '^#?PermitRootLogin'
         line: 'PermitRootLogin no'
       when: disable_root_login
       notify: restart ssh
-      
-    - name: Change SSH port if non-standard
-      lineinfile:
+      tags:
+        - ssh-auth
+        - root-disable
+
+    - name: "SSH Port | Change SSH port to {{ ssh_port }}"
+      # Changes SSH to non-standard port to reduce automated attack attempts.
+      # Security through obscurity - reduces noise but not a primary defense.
+      # Only applies if ssh_port is not 22 (default).
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         state: present
         regexp: '^#?Port '
         line: 'Port {{ ssh_port }}'
       when: ssh_port != 22
       notify: restart ssh
+      tags:
+        - ssh-port
   tags:
     - security
     - ssh
+    - ssh-hardening
 
-# UFW Firewall Setup
-- name: UFW Setup
-  block:
-    - name: UFW - Allow SSH connections
-      ufw:
+# -----------------------------------------------------------------------------
+# SECTION 2: Firewall Configuration (UFW)
+# -----------------------------------------------------------------------------
+# Configures Uncomplicated Firewall (UFW) with default-deny policy.
+# Only explicitly allowed services can receive incoming connections.
+
+- name: "Firewall | Configure UFW with default-deny policy"
+  ansible.builtin.block:
+    - name: "Firewall | Allow SSH on port {{ ssh_port }}"
+      # Must allow SSH before enabling firewall to prevent lockout.
+      # Uses the ssh_port variable to handle non-standard ports.
+      community.general.ufw:
         rule: allow
         port: "{{ ssh_port }}"
         proto: tcp
-      
-    - name: Set up UFW allowed ports
-      ufw:
+      tags:
+        - ssh-allow
+
+    - name: "Firewall | Allow additional configured ports"
+      # Opens ports defined in ufw_allowed_ports variable (vars/default.yml).
+      # Each entry specifies port number and protocol (tcp/udp).
+      # Common examples: 80/tcp (HTTP), 443/tcp (HTTPS), 3306/tcp (MySQL)
+      community.general.ufw:
         rule: allow
         port: "{{ item.port }}"
         proto: "{{ item.proto }}"
       loop: "{{ ufw_allowed_ports }}"
-      
-    - name: UFW - Deny all other incoming traffic by default
-      ufw:
+      tags:
+        - custom-ports
+
+    - name: "Firewall | Enable UFW with deny-by-default incoming policy"
+      # Activates firewall with restrictive default policy.
+      # All incoming traffic is denied unless explicitly allowed above.
+      # Outgoing traffic is allowed by default for system updates and services.
+      community.general.ufw:
         state: enabled
         policy: deny
         direction: incoming
+      tags:
+        - enable-firewall
   tags:
     - security
     - firewall
+    - ufw
 
-# Fail2Ban Additional Configuration
-- name: Configure fail2ban custom settings
-  template:
+# -----------------------------------------------------------------------------
+# SECTION 3: Fail2ban Configuration
+# -----------------------------------------------------------------------------
+# Deploys custom fail2ban configuration for intrusion prevention.
+# Bans IPs that show malicious signs (repeated failed login attempts, etc.).
+
+- name: "Fail2ban | Deploy custom jail.local configuration"
+  # Applies site-specific fail2ban settings from template.
+  # Complements the oefenweb.fail2ban role with custom rules.
+  # Template should be at roles/security/templates/jail.local.j2
+  ansible.builtin.template:
     src: jail.local.j2
     dest: /etc/fail2ban/jail.local
     owner: root
@@ -71,18 +139,33 @@
   tags:
     - security
     - fail2ban
+    - jail-config
 
-# System Hardening
-- name: Apply system hardening
-  block:
-    - name: Set strong password policies
-      lineinfile:
+# -----------------------------------------------------------------------------
+# SECTION 4: System Hardening
+# -----------------------------------------------------------------------------
+# Applies operating system-level security controls.
+# Includes password policies, file permissions, and kernel parameters.
+
+- name: "System Hardening | Apply OS-level security controls"
+  ansible.builtin.block:
+    - name: "PAM Security | Enforce strong password policies"
+      # Configures PAM (Pluggable Authentication Modules) for password strength.
+      # Requirements: 12 char minimum, 3 character difference from old password, 3 retries.
+      # Note: Requires libpam-cracklib or libpam-pwquality package.
+      ansible.builtin.lineinfile:
         path: /etc/pam.d/common-password
         line: "password requisite pam_cracklib.so retry=3 minlen=12 difok=3"
         state: present
-      
-    - name: Set proper permissions on critical directories
-      file:
+      tags:
+        - pam
+        - password-policy
+
+    - name: "File Permissions | Restrict access to cron directories"
+      # Sets restrictive permissions (700) on cron directories.
+      # Prevents unauthorized users from viewing or modifying scheduled tasks.
+      # Critical for preventing privilege escalation via cron jobs.
+      ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         mode: '0700'
@@ -94,19 +177,32 @@
         - /etc/cron.hourly
         - /etc/cron.monthly
         - /etc/cron.weekly
+      tags:
+        - permissions
+        - cron-security
   rescue:
-    - name: Log failure
-      debug:
-        msg: "System hardening failed, please check for errors"
+    - name: "Error Handler | Log system hardening failure"
+      ansible.builtin.debug:
+        msg: "System hardening failed - please review errors above and fix manually"
   tags:
     - security
     - hardening
+    - system-hardening
 
-# DDOS Protection
-- name: Setup basic DDOS protection
-  block:
-    - name: Install fail2ban DDOS configuration
-      copy:
+# -----------------------------------------------------------------------------
+# SECTION 5: DDOS Protection (Optional)
+# -----------------------------------------------------------------------------
+# Provides basic HTTP GET flood protection using fail2ban.
+# DISABLED BY DEFAULT - Enable only on web servers facing the internet.
+
+- name: "DDOS Protection | Configure HTTP flood protection"
+  ansible.builtin.block:
+    - name: "Fail2ban | Install HTTP GET-DOS jail configuration"
+      # Detects and bans IPs making excessive HTTP requests.
+      # Thresholds: 300 requests in 300 seconds (5 minutes) = 10 min ban.
+      # WARNING: May cause false positives on legitimate high-traffic sites.
+      # Requires web server with access logs (Apache/Nginx).
+      ansible.builtin.copy:
         content: |
           [http-get-dos]
           enabled = true
@@ -121,8 +217,9 @@
         group: root
         mode: '0644'
       notify: restart fail2ban
-      when: false  # Enable only if using a web server
+      when: false  # Set to true to enable DDOS protection on web servers
   tags:
     - security
     - ddos
-    - optional 
+    - optional
+    - web-protection 

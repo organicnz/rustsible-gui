@@ -1,0 +1,17 @@
+---
+# Handlers for LEMP role
+
+- name: Reload Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+
+- name: Restart Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+
+- name: Restart MySQL
+  ansible.builtin.service:
+    name: mysql
+    state: restarted

@@ -1,0 +1,483 @@
+---
+# =============================================================================
+# DEVELOPMENT TOOLS INSTALLATION ROLE
+# =============================================================================
+# Purpose: Install and configure essential development tools for modern
+#          software development workflows on Ubuntu servers
+#
+# Components Installed:
+#   1. Neovim:     Modern vim-based text editor with LSP support
+#   2. Node.js:    JavaScript runtime environment (v22 by default)
+#   3. Claude Code: AI-powered coding assistant (optional)
+#
+# Features:
+#   - Kickstart.nvim configuration for batteries-included Neovim setup
+#   - NodeSource repository for latest Node.js versions
+#   - NPM package management for global tools
+#   - Proper user directory permissions
+#
+# Selectable Tags:
+#   - dev            : All development tool tasks
+#   - neovim         : Neovim editor installation and configuration
+#   - nodejs         : Node.js runtime and NPM installation
+#   - claude         : Claude Code AI assistant installation
+#   - editor         : Text editor specific tasks
+#
+# Variable Requirements:
+#   - install_neovim: Boolean to enable/disable Neovim (default: true)
+#   - install_nodejs: Boolean to enable/disable Node.js (default: true)
+#   - install_claude_code: Boolean to enable/disable Claude Code (default: false)
+#   - nodejs_version: Node.js major version (default: 22)
+#
+# Example Usage:
+#   # Install only Neovim
+#   ansible-playbook playbook.yml --tags neovim
+#
+#   # Install everything except Claude Code
+#   ansible-playbook playbook.yml --tags dev --skip-tags claude
+#
+#   # Install Node.js v20 instead of default
+#   ansible-playbook playbook.yml -e "nodejs_version=20"
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: Neovim Text Editor Installation
+# -----------------------------------------------------------------------------
+# Neovim is a modern, extensible text editor built on Vim's foundation.
+# Includes kickstart.nvim for batteries-included LSP, syntax highlighting,
+# fuzzy finding, and modern development features.
+
+- name: "Neovim | Install Neovim text editor and kickstart configuration"
+  block:
+    - name: "Neovim | Install Neovim package from apt repository"
+      # Neovim advantages over Vim:
+      # - Built-in LSP (Language Server Protocol) support
+      # - Better async execution model
+      # - Lua configuration language (faster than VimScript)
+      # - Tree-sitter syntax highlighting
+      # - Better plugin ecosystem
+      ansible.builtin.apt:
+        name: neovim
+        state: present
+        update_cache: yes
+      tags:
+        - dev
+        - neovim
+        - editor
+
+    - name: "Neovim | Ensure user .config directory exists"
+      # Creates ~/.config directory for user-specific configurations.
+      # Uses become: false to create as the ansible_user, not root.
+      # XDG Base Directory specification compliance.
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.config"
+        state: directory
+        mode: '0755'
+      become: false
+      tags:
+        - dev
+        - neovim
+        - config
+
+    - name: "Neovim | Clone kickstart.nvim configuration repository"
+      # Kickstart.nvim provides:
+      # - Pre-configured LSP setup for multiple languages
+      # - Telescope fuzzy finder
+      # - Tree-sitter syntax highlighting
+      # - Git integration with vim-fugitive
+      # - Sensible defaults for modern development
+      #
+      # Repository: https://github.com/nvim-lua/kickstart.nvim
+      # Force: yes ensures clean state on subsequent runs
+      ansible.builtin.git:
+        repo: https://github.com/nvim-lua/kickstart.nvim.git
+        dest: "{{ ansible_env.HOME }}/.config/nvim"
+        version: master
+        force: yes
+      become: false
+      tags:
+        - dev
+        - neovim
+        - config
+
+    - name: "Neovim | Set proper ownership of configuration directory"
+      # Ensures all files in ~/.config/nvim are owned by the correct user.
+      # Prevents permission issues when Neovim tries to write plugins/cache.
+      # Recursive: yes ensures all subdirectories are also updated.
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.config/nvim"
+        state: directory
+        recurse: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      tags:
+        - dev
+        - neovim
+        - permissions
+
+    - name: "Neovim | Display installation success message"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "NEOVIM INSTALLATION COMPLETE"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Neovim with kickstart.nvim configuration installed"
+          - ""
+          - "First run setup:"
+          - "1. Launch Neovim: nvim"
+          - "2. Wait for plugins to install automatically"
+          - "3. Restart Neovim after installation completes"
+          - ""
+          - "Key features available:"
+          - "- LSP for multiple languages"
+          - "- Fuzzy file finder (Telescope)"
+          - "- Syntax highlighting (Tree-sitter)"
+          - "- Git integration"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - dev
+        - neovim
+
+  rescue:
+    - name: "Error Handler | Neovim installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          NEOVIM INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Package not available in Ubuntu repositories
+          - Network connectivity issues with GitHub
+          - Permission issues creating .config directory
+          - Git not installed on target system
+          - Insufficient disk space for plugins
+
+          Troubleshooting steps:
+          1. Check Neovim availability: apt-cache search neovim
+          2. Verify Git is installed: git --version
+          3. Test GitHub connectivity: ping github.com
+          4. Check disk space: df -h ~
+          5. Verify user permissions: id {{ ansible_user }}
+
+          Manual installation:
+          sudo apt update
+          sudo apt install neovim git
+          git clone https://github.com/nvim-lua/kickstart.nvim.git ~/.config/nvim
+
+          Alternative editors:
+          - vim: sudo apt install vim
+          - emacs: sudo apt install emacs
+          - nano: Already installed on Ubuntu
+          ============================================================
+
+  when: install_neovim | default(true) | bool
+  tags:
+    - dev
+    - neovim
+
+# -----------------------------------------------------------------------------
+# SECTION 2: Node.js Runtime Environment Installation
+# -----------------------------------------------------------------------------
+# Installs Node.js from NodeSource repository for latest versions.
+# Ubuntu's default repositories often contain outdated Node.js versions.
+
+- name: "Node.js | Install Node.js runtime and NPM package manager"
+  block:
+    - name: "Node.js | Install prerequisite packages for repository setup"
+      # curl: Download GPG keys and repository scripts
+      # ca-certificates: Verify SSL certificates for HTTPS connections
+      # gnupg: GPG key management for package verification
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: yes
+      tags:
+        - dev
+        - nodejs
+        - dependencies
+
+    - name: "Node.js | Create APT keyrings directory for third-party keys"
+      # Modern Debian/Ubuntu systems store third-party GPG keys in /etc/apt/keyrings
+      # This is the recommended location per Debian best practices.
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+      tags:
+        - dev
+        - nodejs
+        - security
+
+    - name: "Node.js | Download and install NodeSource GPG signing key"
+      # Downloads NodeSource GPG key and converts to binary format.
+      # GPG key verifies authenticity of NodeSource packages.
+      # creates: Makes this task idempotent - only runs if key doesn't exist.
+      ansible.builtin.shell: |
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      args:
+        creates: /etc/apt/keyrings/nodesource.gpg
+      tags:
+        - dev
+        - nodejs
+        - security
+
+    - name: "Node.js | Add NodeSource repository to APT sources"
+      # Adds NodeSource repository for Node.js {{ nodejs_version | default('22') }}.x
+      # NodeSource provides more recent versions than Ubuntu repositories.
+      # signed-by: Specifies which GPG key to use for verification.
+      # creates: Prevents duplicate repository entries.
+      ansible.builtin.shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ nodejs_version | default('22') }}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+      tags:
+        - dev
+        - nodejs
+        - repository
+
+    - name: "Node.js | Update APT package cache with NodeSource packages"
+      # Refreshes package cache to include NodeSource repository packages.
+      # Must run before installing Node.js from the new repository.
+      ansible.builtin.apt:
+        update_cache: yes
+      tags:
+        - dev
+        - nodejs
+
+    - name: "Node.js | Install Node.js runtime and NPM"
+      # Installs Node.js from NodeSource repository.
+      # Includes NPM (Node Package Manager) automatically.
+      # Version installed depends on nodejs_version variable.
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+      tags:
+        - dev
+        - nodejs
+
+    - name: "Node.js | Verify Node.js installation and version"
+      # Checks Node.js installation by running --version command.
+      # changed_when: false prevents marking as "changed" in output.
+      # Stores version in node_version variable for display.
+      ansible.builtin.command: node --version
+      register: node_version
+      changed_when: false
+      tags:
+        - dev
+        - nodejs
+        - validation
+
+    - name: "Node.js | Display installed Node.js version"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "NODE.JS INSTALLATION COMPLETE"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Node.js version: {{ node_version.stdout }}"
+          - ""
+          - "Verify installation:"
+          - "  node --version"
+          - "  npm --version"
+          - ""
+          - "Install global packages:"
+          - "  npm install -g <package-name>"
+          - ""
+          - "Common global packages:"
+          - "  - typescript: npm install -g typescript"
+          - "  - pm2: npm install -g pm2"
+          - "  - yarn: npm install -g yarn"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - dev
+        - nodejs
+
+  rescue:
+    - name: "Error Handler | Node.js installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          NODE.JS INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Network connectivity issues with NodeSource repository
+          - GPG key download failure
+          - Conflicting Node.js installation (nvm, snap, etc.)
+          - Insufficient permissions for repository setup
+          - Unsupported nodejs_version specified
+
+          Troubleshooting steps:
+          1. Check network connectivity: ping deb.nodesource.com
+          2. Verify GPG key exists: ls -la /etc/apt/keyrings/nodesource.gpg
+          3. Check for conflicts: which node
+          4. Remove conflicting installations:
+             - NVM: nvm deactivate && nvm uninstall --lts
+             - Snap: snap remove node
+          5. Verify repository: cat /etc/apt/sources.list.d/nodesource.list
+          6. Check apt logs: cat /var/log/apt/term.log
+
+          Manual installation:
+          curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version | default('22') }}.x | sudo -E bash -
+          sudo apt install nodejs
+
+          Alternative installation methods:
+          - NVM: https://github.com/nvm-sh/nvm
+          - Official binaries: https://nodejs.org/en/download/
+
+          Supported nodejs_version values: 18, 20, 22 (LTS versions)
+          ============================================================
+
+  when: install_nodejs | default(true) | bool
+  tags:
+    - dev
+    - nodejs
+
+# -----------------------------------------------------------------------------
+# SECTION 3: Claude Code AI Assistant Installation (Optional)
+# -----------------------------------------------------------------------------
+# Installs Claude Code CLI tool globally via NPM.
+# Requires Node.js to be installed first.
+# DISABLED BY DEFAULT - Set install_claude_code: true to enable.
+
+- name: "Claude Code | Install AI coding assistant CLI tool"
+  block:
+    - name: "Claude Code | Install @anthropic-ai/claude-code via NPM"
+      # Installs Claude Code as a global NPM package.
+      # Global installation makes 'claude-code' command available system-wide.
+      # Requires valid Anthropic API key to use (configured separately).
+      #
+      # NOTE: Requires community.general collection:
+      # ansible-galaxy collection install community.general
+      community.general.npm:
+        name: "@anthropic-ai/claude-code"
+        global: yes
+        state: present
+      tags:
+        - dev
+        - claude
+        - ai
+
+    - name: "Claude Code | Verify installation success"
+      # Checks if Claude Code package is installed globally.
+      # failed_when: false allows task to succeed even if package not found.
+      # changed_when: false prevents marking as "changed".
+      ansible.builtin.command: npm list -g @anthropic-ai/claude-code
+      register: claude_code_installed
+      changed_when: false
+      failed_when: false
+      tags:
+        - dev
+        - claude
+        - validation
+
+    - name: "Claude Code | Display installation instructions"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "CLAUDE CODE INSTALLATION COMPLETE"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Claude Code CLI tool installed globally"
+          - ""
+          - "Configuration required:"
+          - "1. Get API key from: https://console.anthropic.com/"
+          - "2. Set environment variable:"
+          - "   export ANTHROPIC_API_KEY='your-api-key-here'"
+          - "3. Add to ~/.bashrc or ~/.zshrc for persistence"
+          - ""
+          - "Usage:"
+          - "  claude-code --help"
+          - "  claude-code chat"
+          - "  claude-code generate"
+          - ""
+          - "Features:"
+          - "- AI-powered code generation"
+          - "- Intelligent code completion"
+          - "- Code explanation and documentation"
+          - "- Bug detection and fixing suggestions"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - dev
+        - claude
+
+  rescue:
+    - name: "Error Handler | Claude Code installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CLAUDE CODE INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Node.js/NPM not installed (required dependency)
+          - Network connectivity issues with NPM registry
+          - Insufficient permissions for global NPM installation
+          - NPM registry timeout or service unavailable
+          - community.general Ansible collection not installed
+
+          Troubleshooting steps:
+          1. Verify Node.js: node --version && npm --version
+          2. Check NPM connectivity: npm ping
+          3. Test global install permissions: npm install -g npm
+          4. Check NPM registry: npm config get registry
+          5. Install Ansible collection:
+             ansible-galaxy collection install community.general
+          6. Check NPM logs: npm config get cache
+
+          Manual installation:
+          npm install -g @anthropic-ai/claude-code
+
+          Alternative installation:
+          - Use npx without global install:
+            npx @anthropic-ai/claude-code chat
+          - Install locally in project:
+            npm install @anthropic-ai/claude-code
+
+          Prerequisites:
+          - Node.js 18+ required
+          - NPM 9+ required
+          - Anthropic API key required for usage
+          ============================================================
+
+  when: install_claude_code | default(false) | bool
+  tags:
+    - dev
+    - claude
+    - optional
+
+# =============================================================================
+# DEVELOPMENT TOOLS USAGE TIPS
+# =============================================================================
+#
+# Neovim:
+#   Launch: nvim
+#   Config: ~/.config/nvim/
+#   Help: :help in Neovim
+#   Kickstart docs: https://github.com/nvim-lua/kickstart.nvim
+#
+# Node.js:
+#   Check version: node --version
+#   Run REPL: node
+#   Execute script: node script.js
+#   NPM help: npm help
+#
+# Claude Code:
+#   Setup API key: export ANTHROPIC_API_KEY='your-key'
+#   Start chat: claude-code chat
+#   Get help: claude-code --help
+#   Generate code: claude-code generate
+#
+# Disable specific tools via vars:
+#   install_neovim: false
+#   install_nodejs: false
+#   install_claude_code: false
+#
+# Run only specific tool installation:
+#   ansible-playbook playbook.yml --tags neovim
+#   ansible-playbook playbook.yml --tags nodejs
+#   ansible-playbook playbook.yml --tags claude
+#
+# =============================================================================

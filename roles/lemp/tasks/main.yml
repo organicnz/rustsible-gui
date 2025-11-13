@@ -1,0 +1,536 @@
+---
+# =============================================================================
+# LEMP STACK DEPLOYMENT ROLE
+# =============================================================================
+# Purpose: Deploy complete LEMP (Linux, Nginx, MySQL, PHP) stack for web hosting
+#          with security hardening, performance optimization, and WordPress support
+#
+# Components Installed:
+#   1. Nginx:     High-performance web server and reverse proxy
+#   2. MySQL:     Relational database management system (MariaDB variant)
+#   3. PHP-FPM:   PHP FastCGI Process Manager with essential modules
+#
+# Security Features:
+#   - MySQL secure installation (remove test DB, anonymous users)
+#   - Root MySQL credentials stored securely
+#   - Nginx default site removal
+#   - PHP-FPM security settings
+#   - Restrictive file permissions
+#
+# Selectable Tags:
+#   - lemp            : All LEMP stack operations
+#   - nginx           : Nginx web server tasks
+#   - mysql           : MySQL database tasks
+#   - mysql-secure    : MySQL security hardening
+#   - php             : PHP and modules installation
+#   - web-config      : Virtual host configuration
+#   - validate        : Service validation and health checks
+#
+# Variable Requirements:
+#   - php_modules: List of PHP modules to install (defined in vars/default.yml)
+#   - install_lemp: Boolean to enable/disable LEMP installation
+#   - mysql_root_password: MySQL root password (use Ansible Vault!)
+#
+# Example Usage:
+#   # Install only MySQL
+#   ansible-playbook playbook.yml --tags mysql
+#
+#   # Install everything except validation
+#   ansible-playbook playbook.yml --tags lemp --skip-tags validate
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: Nginx Web Server Installation
+# -----------------------------------------------------------------------------
+# Nginx provides better performance than Apache for static content and acts as
+# a reverse proxy for PHP-FPM. Uses event-driven architecture for efficiency.
+
+- name: "Nginx | Install Nginx web server and dependencies"
+  block:
+    - name: "Nginx | Install Nginx package"
+      # Nginx advantages over Apache:
+      # - Lower memory footprint
+      # - Better concurrent connection handling
+      # - Simpler configuration syntax
+      # - Built-in reverse proxy and load balancing
+      # - Faster static file serving
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: yes
+      tags:
+        - lemp
+        - nginx
+        - web-server
+
+    - name: "Nginx | Remove default site configuration"
+      # Default Nginx site conflicts with custom virtual hosts.
+      # Must be removed to prevent serving unwanted content.
+      # Custom sites should be added via templates to sites-available.
+      ansible.builtin.file:
+        path: "/etc/nginx/sites-enabled/default"
+        state: absent
+      notify: Reload Nginx
+      tags:
+        - lemp
+        - nginx
+        - web-config
+
+    - name: "Nginx | Ensure Nginx service is running and enabled"
+      # Starts Nginx immediately and configures systemd to start on boot.
+      # State: started ensures service is running now.
+      # Enabled: yes ensures service starts after reboot.
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+      tags:
+        - lemp
+        - nginx
+        - service
+
+  rescue:
+    - name: "Error Handler | Nginx installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          NGINX INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Package repository issues
+          - Network connectivity problems
+          - Conflicting Apache installation
+          - Insufficient disk space
+
+          Troubleshooting steps:
+          1. Check package availability: apt-cache search nginx
+          2. Verify network: ping security.ubuntu.com
+          3. Check for Apache conflicts: systemctl status apache2
+          4. Verify disk space: df -h
+          5. Check APT logs: cat /var/log/apt/term.log
+
+          Manual recovery:
+          sudo apt update
+          sudo apt install nginx
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 2: MySQL Database Installation
+# -----------------------------------------------------------------------------
+# Installs MySQL (or MariaDB) database server with Python bindings for Ansible
+# management. Includes security hardening tasks.
+
+- name: "MySQL | Install MySQL server and dependencies"
+  block:
+    - name: "MySQL | Install MySQL/MariaDB server"
+      # Uses default-mysql-server package which installs:
+      # - Ubuntu 20.04/22.04: MySQL 8.0
+      # - Some variants: MariaDB (MySQL compatible)
+      # Both are functionally equivalent for most use cases.
+      ansible.builtin.apt:
+        name: default-mysql-server
+        state: present
+        update_cache: yes
+      tags:
+        - lemp
+        - mysql
+        - database
+
+    - name: "MySQL | Install Python MySQL client libraries"
+      # Required for Ansible mysql_* modules to function.
+      # python3-pymysql: Pure Python MySQL driver
+      # default-libmysqlclient-dev: Development headers for MySQL client
+      ansible.builtin.apt:
+        name:
+          - python3-pymysql
+          - default-libmysqlclient-dev
+        state: present
+      tags:
+        - lemp
+        - mysql
+        - dependencies
+
+    - name: "MySQL | Ensure MySQL service is running and enabled"
+      # Starts MySQL immediately and enables automatic startup on boot.
+      ansible.builtin.service:
+        name: mysql
+        state: started
+        enabled: yes
+      tags:
+        - lemp
+        - mysql
+        - service
+
+  rescue:
+    - name: "Error Handler | MySQL installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          MYSQL INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Package repository issues
+          - Previous MySQL installation conflicts
+          - Insufficient system resources
+          - AppArmor policy blocking MySQL
+
+          Troubleshooting steps:
+          1. Check existing MySQL: dpkg -l | grep mysql
+          2. Remove old installations: apt purge mysql-*
+          3. Check system resources: free -h && df -h
+          4. Verify AppArmor: aa-status | grep mysql
+          5. Check MySQL logs: journalctl -u mysql
+
+          Manual recovery:
+          sudo apt update
+          sudo apt install default-mysql-server
+          sudo systemctl start mysql
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 3: MySQL Security Hardening
+# -----------------------------------------------------------------------------
+# Implements mysql_secure_installation equivalent via Ansible.
+# Removes insecure defaults that ship with MySQL installations.
+
+- name: "MySQL Security | Harden MySQL installation"
+  block:
+    - name: "MySQL Security | Create root credentials file /root/.my.cnf"
+      # Stores MySQL root password for automated Ansible operations.
+      # IMPORTANT: File must be mode 0600 to prevent credential exposure.
+      # Located in root's home directory for automated scripts.
+      # Uses template to inject password from Ansible Vault.
+      ansible.builtin.template:
+        src: .my.cnf.j2
+        dest: /root/.my.cnf
+        owner: root
+        group: root
+        mode: '0600'
+      when: mysql_root_password is defined
+      tags:
+        - lemp
+        - mysql
+        - mysql-secure
+        - security
+
+    - name: "MySQL Security | Remove anonymous user accounts"
+      # Anonymous MySQL users (with empty username) are a security risk.
+      # They allow unauthenticated connections to the database.
+      # This task is equivalent to mysql_secure_installation removal.
+      community.mysql.mysql_user:
+        name: ""
+        host: localhost
+        state: absent
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      ignore_errors: yes  # May not exist on fresh install
+      tags:
+        - lemp
+        - mysql
+        - mysql-secure
+        - security
+
+    - name: "MySQL Security | Remove test database"
+      # MySQL ships with a 'test' database that any user can access.
+      # Not needed in production and poses an information disclosure risk.
+      community.mysql.mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password | default('') }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      when: mysql_root_password is defined
+      ignore_errors: yes  # May not exist on some installations
+      tags:
+        - lemp
+        - mysql
+        - mysql-secure
+        - security
+
+  rescue:
+    - name: "Error Handler | MySQL security hardening failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          MYSQL SECURITY HARDENING FAILED
+          ============================================================
+
+          Possible causes:
+          - MySQL not fully started
+          - Incorrect root password
+          - MySQL socket not accessible
+          - community.mysql collection not installed
+
+          Troubleshooting steps:
+          1. Verify MySQL is running: systemctl status mysql
+          2. Check MySQL socket: ls -la /var/run/mysqld/mysqld.sock
+          3. Test root login: mysql -u root -p
+          4. Install collection: ansible-galaxy collection install community.mysql
+          5. Check MySQL error log: tail -f /var/log/mysql/error.log
+
+          Manual hardening:
+          sudo mysql_secure_installation
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 4: PHP Installation and Configuration
+# -----------------------------------------------------------------------------
+# Installs PHP-FPM and essential modules for web application support.
+
+- name: "PHP | Install PHP-FPM and required modules"
+  block:
+    - name: "PHP | Install PHP packages"
+      # PHP modules are defined in vars/default.yml under 'php_modules'.
+      # Common modules include:
+      # - php-fpm: FastCGI Process Manager (better than mod_php)
+      # - php-mysql: MySQL database connectivity
+      # - php-curl: HTTP client functionality
+      # - php-gd: Image manipulation library
+      # - php-xml: XML parsing support
+      # - php-mbstring: Multibyte string handling
+      ansible.builtin.apt:
+        name: "{{ php_modules }}"
+        state: present
+        update_cache: yes
+      when: php_modules is defined
+      tags:
+        - lemp
+        - php
+
+  rescue:
+    - name: "Error Handler | PHP installation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          PHP INSTALLATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Invalid PHP module names in php_modules variable
+          - Repository not supporting requested PHP version
+          - Package conflicts with existing PHP installation
+
+          Troubleshooting steps:
+          1. Check available PHP packages: apt-cache search php8
+          2. Verify php_modules variable: cat vars/default.yml | grep php_modules
+          3. Remove conflicting PHP: apt purge php*
+          4. Update repositories: apt update
+
+          Common PHP modules:
+          php-fpm, php-mysql, php-curl, php-gd, php-xml,
+          php-mbstring, php-zip, php-intl, php-soap
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 5: Service Validation
+# -----------------------------------------------------------------------------
+# Verifies all LEMP components are properly installed and running.
+
+- name: "Validation | Verify LEMP stack health"
+  block:
+    - name: "Validation | Check Nginx is responding on port 80"
+      # Tests if Nginx is accepting HTTP connections.
+      # Should return 200 OK or 403 Forbidden (no sites configured yet).
+      ansible.builtin.uri:
+        url: http://localhost
+        status_code:
+          - 200
+          - 403
+        timeout: 5
+      register: nginx_check
+      ignore_errors: yes
+      tags:
+        - lemp
+        - validate
+        - health-check
+
+    - name: "Validation | Check MySQL is accepting connections"
+      # Verifies MySQL daemon is running and accepting connections.
+      # Uses mysqladmin ping which connects to MySQL and exits.
+      ansible.builtin.command: mysqladmin ping -u root
+      register: mysql_check
+      changed_when: false
+      ignore_errors: yes
+      tags:
+        - lemp
+        - validate
+        - health-check
+
+    - name: "Validation | Check PHP-FPM service status"
+      # Verifies PHP-FPM service is running.
+      # Service name may vary: php7.4-fpm, php8.1-fpm, etc.
+      ansible.builtin.shell: systemctl is-active php*-fpm
+      register: php_check
+      changed_when: false
+      ignore_errors: yes
+      tags:
+        - lemp
+        - validate
+        - health-check
+
+    - name: "Validation | Display LEMP stack status summary"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "LEMP STACK INSTALLATION COMPLETE"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Nginx Status: {{ 'OK' if nginx_check.status in [200, 403] else 'FAILED' }}"
+          - "MySQL Status: {{ 'OK' if mysql_check.rc == 0 else 'FAILED' }}"
+          - "PHP-FPM Status: {{ 'OK' if php_check.rc == 0 else 'FAILED' }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Next steps:"
+          - "1. Configure Nginx virtual hosts in /etc/nginx/sites-available/"
+          - "2. Create MySQL databases and users"
+          - "3. Deploy web applications to /var/www/"
+          - "4. Configure PHP-FPM pool settings if needed"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - lemp
+        - validate
+
+  rescue:
+    - name: "Error Handler | Validation failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          LEMP STACK VALIDATION FAILED
+          ============================================================
+
+          One or more services may not be running properly.
+          Check individual service status:
+
+          sudo systemctl status nginx
+          sudo systemctl status mysql
+          sudo systemctl status php*-fpm
+
+          View service logs:
+          sudo journalctl -u nginx -n 50
+          sudo journalctl -u mysql -n 50
+          sudo journalctl -u php*-fpm -n 50
+          ============================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 6: Nginx Virtual Host Configuration (Optional)
+# -----------------------------------------------------------------------------
+# Configures Nginx virtual host for WordPress or other web applications.
+# ONLY runs when configure_nginx_vhost variable is true.
+
+- name: "Nginx VHost | Configure virtual host for web application"
+  block:
+    - name: "Nginx VHost | Deploy WordPress virtual host configuration"
+      # Deploys Nginx virtual host configuration from template.
+      # Configuration includes:
+      # - PHP-FPM integration
+      # - WordPress permalink support (URL rewriting)
+      # - Gzip compression for performance
+      # - Static file caching
+      # - Security headers
+      # - SSL certificate placeholders (ready for Certbot)
+      #
+      # Template variables:
+      # - full_domain: Primary domain name
+      # - http_host: HTTP host (usually same as full_domain)
+      ansible.builtin.template:
+        src: wordpress-nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ full_domain | default('default') }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload Nginx
+      tags:
+        - lemp
+        - nginx
+        - wordpress-nginx
+        - web-config
+
+    - name: "Nginx VHost | Enable site by creating symbolic link"
+      # Creates symlink in sites-enabled to activate the virtual host.
+      # Nginx only loads configurations from sites-enabled directory.
+      # This is standard Nginx convention on Debian/Ubuntu systems.
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ full_domain | default('default') }}"
+        dest: "/etc/nginx/sites-enabled/{{ full_domain | default('default') }}"
+        state: link
+      notify: Reload Nginx
+      tags:
+        - lemp
+        - nginx
+        - wordpress-nginx
+        - web-config
+
+    - name: "Nginx VHost | Test Nginx configuration syntax"
+      # Validates Nginx configuration before reloading.
+      # Prevents breaking Nginx with invalid configuration.
+      # If test fails, Nginx won't reload and site stays up.
+      ansible.builtin.command: nginx -t
+      register: nginx_test
+      changed_when: false
+      tags:
+        - lemp
+        - nginx
+        - wordpress-nginx
+        - validation
+
+    - name: "Nginx VHost | Display virtual host configuration success"
+      ansible.builtin.debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "NGINX VIRTUAL HOST CONFIGURED"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "Domain: {{ full_domain | default('default') }}"
+          - "Config: /etc/nginx/sites-available/{{ full_domain | default('default') }}"
+          - "Document root: /var/www/{{ http_host | default(full_domain) }}/wordpress"
+          - ""
+          - "Nginx test result: {{ nginx_test.stdout }}"
+          - ""
+          - "Next steps:"
+          - "1. Install SSL certificate: ansible-playbook playbook.yml --tags certbot"
+          - "2. Access your site: http://{{ full_domain | default('your-domain.com') }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      tags:
+        - lemp
+        - nginx
+        - wordpress-nginx
+
+  rescue:
+    - name: "Error Handler | Nginx virtual host configuration failed"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          NGINX VIRTUAL HOST CONFIGURATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Template file missing (wordpress-nginx.conf.j2)
+          - Invalid Nginx configuration syntax
+          - full_domain variable not defined
+          - /etc/nginx/sites-available/ directory doesn't exist
+          - Permission issues writing to /etc/nginx/
+
+          Troubleshooting steps:
+          1. Check template exists:
+             ls -la roles/lemp/templates/wordpress-nginx.conf.j2
+          2. Verify full_domain defined:
+             grep full_domain vars/default.yml
+          3. Test Nginx configuration:
+             sudo nginx -t
+          4. Check Nginx directories:
+             ls -la /etc/nginx/sites-available/
+             ls -la /etc/nginx/sites-enabled/
+          5. View Nginx error log:
+             sudo cat /var/log/nginx/error.log
+
+          Manual virtual host setup:
+          sudo nano /etc/nginx/sites-available/{{ full_domain | default('your-domain') }}
+          sudo ln -s /etc/nginx/sites-available/{{ full_domain | default('your-domain') }} /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl reload nginx
+          ============================================================
+
+  when: configure_nginx_vhost | default(false) | bool
+  tags:
+    - lemp
+    - nginx
+    - wordpress-nginx
+    - optional

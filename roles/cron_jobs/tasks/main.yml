@@ -1,0 +1,194 @@
+---
+# =============================================================================
+# AUTOMATED CRON JOBS FOR SYSTEM MAINTENANCE
+# =============================================================================
+# Purpose: Configure automated system maintenance tasks for security updates,
+#          package management, and optional periodic reboots
+#
+# Configured Tasks:
+#   - Unattended security upgrades (every 48 hours by default)
+#   - System update, upgrade, and cleanup (every 48 hours by default)
+#   - Optional periodic system reboots (disabled by default)
+#
+# Selectable Tags:
+#   - cron                  : All cron job tasks
+#   - cron-security         : Security-related cron jobs
+#   - cron-updates          : Update and upgrade cron jobs
+#   - cron-cleanup          : Cleanup and maintenance cron jobs
+#   - cron-reboot           : Periodic reboot configuration
+#   - unattended-upgrades   : Unattended security upgrade configuration
+#   - auto-updates          : Automatic system update configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: Unattended Security Upgrades
+# -----------------------------------------------------------------------------
+# Automatically applies security patches without manual intervention.
+# Critical for maintaining security posture on production systems.
+
+- name: "Security Automation | Configure unattended security upgrade cron job"
+  # Runs unattended-upgrade to automatically install security patches.
+  # Default schedule: Every 48 hours at minute 1
+  #
+  # Security benefits:
+  # - Ensures security patches are applied promptly
+  # - Reduces window of vulnerability exposure
+  # - No manual intervention required
+  #
+  # Customization:
+  # - Adjust schedule via cron_unattended_upgrade_minute/hour in vars
+  # - Disable completely by setting enable_unattended_upgrades: false
+  #
+  # Note: Only installs updates marked as security updates
+  # Regular updates still require manual intervention or auto-updates cron
+  ansible.builtin.cron:
+    name: "Unattended security upgrades"
+    state: present
+    minute: "{{ cron_unattended_upgrade_minute | default('1') }}"
+    hour: "{{ cron_unattended_upgrade_hour | default('*/48') }}"
+    day: "*"
+    month: "*"
+    weekday: "*"
+    job: "/usr/bin/unattended-upgrade -v >/dev/null 2>&1"
+    user: root
+  when: enable_unattended_upgrades | default(true) | bool
+  tags:
+    - cron
+    - cron-security
+    - security
+    - unattended-upgrades
+
+# -----------------------------------------------------------------------------
+# SECTION 2: Comprehensive System Updates
+# -----------------------------------------------------------------------------
+# Performs complete update cycle: update cache, upgrade packages, cleanup.
+
+- name: "System Maintenance | Configure automated update, upgrade, and cleanup cron job"
+  # Executes complete system update workflow:
+  # 1. apt update - Refreshes package cache from repositories
+  # 2. apt upgrade -y - Installs all available updates automatically
+  # 3. apt autoremove -y - Removes orphaned dependencies
+  # 4. apt clean - Clears downloaded package cache
+  #
+  # Default schedule: Every 48 hours at minute 1
+  #
+  # Benefits:
+  # - Keeps system up-to-date with latest packages
+  # - Frees disk space by removing obsolete packages
+  # - Prevents accumulation of security vulnerabilities
+  #
+  # Considerations:
+  # - Upgrades all packages, not just security updates
+  # - May occasionally cause compatibility issues (rare)
+  # - Review /var/log/apt/history.log for update history
+  #
+  # Customization:
+  # - Adjust schedule via cron_system_update_minute/hour in vars
+  # - Disable by setting enable_auto_updates: false
+  # - Consider testing updates in staging before production
+  ansible.builtin.cron:
+    name: "System update, upgrade, and cleanup"
+    user: root
+    state: present
+    minute: "{{ cron_system_update_minute | default('1') }}"
+    hour: "{{ cron_system_update_hour | default('*/48') }}"
+    day: "*"
+    month: "*"
+    weekday: "*"
+    job: "apt update && apt upgrade -y && apt autoremove -y && apt clean >/dev/null 2>&1"
+  when: enable_auto_updates | default(true) | bool
+  tags:
+    - cron
+    - cron-updates
+    - cron-cleanup
+    - system
+    - auto-updates
+
+# -----------------------------------------------------------------------------
+# SECTION 3: Periodic System Reboots (Optional)
+# -----------------------------------------------------------------------------
+# Optionally reboots system on a regular schedule.
+# DISABLED BY DEFAULT - Enable only when necessary.
+
+- name: "System Maintenance | Configure optional periodic reboot schedule"
+  # Automatically reboots system on configured schedule.
+  #
+  # DEFAULT: DISABLED (enable_periodic_reboot: false)
+  #
+  # When to enable:
+  # - Systems with memory leak issues requiring periodic restart
+  # - Ensuring kernel updates are applied (reboot required)
+  # - Clearing system state for long-running services
+  # - Compliance requirements for regular reboots
+  #
+  # When NOT to enable:
+  # - High-availability systems with strict uptime requirements
+  # - Production services without proper failover
+  # - Systems running critical real-time processes
+  #
+  # Default schedule: Every 6 hours at minute 1
+  #
+  # WARNING: Unplanned reboots can disrupt services!
+  # Recommendations:
+  # - Only enable on non-critical systems
+  # - Schedule during low-traffic periods
+  # - Implement proper service startup scripts
+  # - Consider load balancer / failover setup
+  # - Monitor reboot logs: journalctl -u cron
+  #
+  # Customization:
+  # - Enable: Set enable_periodic_reboot: true in vars
+  # - Adjust schedule via cron_reboot_hour in vars
+  # - Example: "3" for daily at 3 AM, "*/12" for twice daily
+  #
+  # Alternative: Use reboot playbook tag for manual reboots
+  # ansible-playbook playbook.yml -t reboot
+  ansible.builtin.cron:
+    name: "Periodic system reboot"
+    state: "{{ 'present' if enable_periodic_reboot | default(false) | bool else 'absent' }}"
+    minute: "1"
+    hour: "{{ cron_reboot_hour | default('*/6') }}"
+    day: "*"
+    month: "*"
+    weekday: "*"
+    job: "/sbin/shutdown -r now > /dev/null 2>&1"
+    user: root
+  when: enable_periodic_reboot is defined
+  tags:
+    - cron
+    - cron-reboot
+    - system
+    - reboot
+    - optional
+
+# =============================================================================
+# CRON JOB MANAGEMENT TIPS
+# =============================================================================
+#
+# View configured cron jobs:
+#   sudo crontab -l
+#
+# View cron execution logs:
+#   grep CRON /var/log/syslog
+#   journalctl -u cron
+#
+# Manually trigger unattended upgrades:
+#   sudo unattended-upgrade -v
+#
+# Manually trigger system update:
+#   sudo apt update && sudo apt upgrade -y
+#
+# Disable specific cron job via vars:
+#   enable_unattended_upgrades: false
+#   enable_auto_updates: false
+#   enable_periodic_reboot: false
+#
+# Customize cron schedule via vars (examples):
+#   cron_unattended_upgrade_hour: "3"      # Daily at 3:01 AM
+#   cron_system_update_hour: "*/24"        # Every 24 hours
+#   cron_reboot_hour: "4"                  # Daily at 4:01 AM
+#
+# Run only cron configuration:
+#   ansible-playbook playbook.yml -t cron
+#
+# =============================================================================

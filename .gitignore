@@ -102,3 +102,31 @@ pip-selfcheck.json
 .ropeproject
 *.retry
 *.swp
+
+# Ansible Vault (unencrypted sensitive data)
+vars/vault.yml
+
+# Ansible temporary files
+.ansible/
+*.retry
+
+# Vault password files
+.vault_pass
+.vault_pass.txt
+vault_pass.txt
+
+# SSH keys and passwords
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+password.txt
+.ssh/password
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# History files
+.history/

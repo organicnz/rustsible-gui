@@ -1,36 +1,86 @@
 ---
-# Base System Setup
+# =============================================================================
+# BASE SYSTEM SETUP ROLE
+# =============================================================================
+# Purpose: Initial server configuration including user management, package
+#          installation, timezone configuration, and system initialization
+#
+# Selectable Tags:
+#   - connection  : System connection and availability checks
+#   - cloud-init  : Cloud initialization tasks
+#   - timezone    : Timezone configuration
+#   - user        : User creation and management
+#   - sudo        : Sudo and privilege escalation setup
+#   - ssh-keys    : SSH key deployment
+#   - packages    : Package installation and updates
+#   - upgrade     : System version upgrades
+# =============================================================================
 
-# Wait for system to become available
-- name: Wait for system to become reachable
-  wait_for_connection:
+# -----------------------------------------------------------------------------
+# SECTION 1: System Availability and Initialization
+# -----------------------------------------------------------------------------
+# Ensures the target system is reachable and ready for configuration.
+# This prevents playbook failures due to system boot delays or cloud-init processes.
+
+- name: "System Check | Wait for system to become reachable"
+  ansible.builtin.wait_for_connection:
     timeout: 600
-  tags: 
+  tags:
     - always
+    - connection
 
-# Wait for cloud-init / user-data to finish
-- name: Wait for cloud-init / user-data to finish
+- name: "System Check | Wait for cloud-init to complete"
+  # Cloud-init can interfere with package management and system configuration.
+  # This ensures cloud-init has finished before we proceed with our tasks.
   command: cloud-init status --wait
   changed_when: false
   retries: 10
   delay: 10
   until: result.stdout == "done"
   register: result
-  when: false  # Change to true if using cloud-init
+  when: false  # Set to true if using cloud providers (AWS, Azure, DigitalOcean, etc.)
   tags:
     - system
+    - cloud-init
+    - connection
 
-# User Management
-- name: Make sure we have a 'wheel' group
-  group:
+# -----------------------------------------------------------------------------
+# SECTION 2: System Configuration
+# -----------------------------------------------------------------------------
+# Basic system settings that should be applied early in the setup process.
+
+- name: "System Config | Set timezone to {{ system_timezone | default('America/Los_Angeles') }}"
+  # Setting timezone prevents logging and scheduling issues.
+  # Ensures consistency across distributed systems.
+  community.general.timezone:
+    name: "{{ system_timezone | default('America/Los_Angeles') }}"
+  tags:
+    - system
+    - timezone
+    - config
+
+# -----------------------------------------------------------------------------
+# SECTION 3: User and Access Management
+# -----------------------------------------------------------------------------
+# Creates non-root user with sudo privileges for secure system administration.
+# Implements principle of least privilege by using wheel group for sudo access.
+
+- name: "User Management | Create 'wheel' group for sudo access"
+  # The wheel group is a standard Unix convention for users with sudo privileges.
+  # This provides better organization than adding users individually to sudoers.
+  ansible.builtin.group:
     name: wheel
     state: present
   tags:
     - user
     - security
+    - sudo
+    - groups
 
-- name: Allow 'wheel' group to have passwordless sudo
-  lineinfile:
+- name: "User Management | Configure passwordless sudo for wheel group"
+  # Passwordless sudo is acceptable when combined with SSH key authentication.
+  # This enables automation while maintaining security through key-based access.
+  ansible.builtin.lineinfile:
     path: /etc/sudoers
     state: present
     regexp: '^(%wheel|%@includedir)'
@@ -39,9 +89,12 @@
   tags:
     - user
     - security
+    - sudo
 
-- name: Create a new regular user with sudo privileges
-  user:
+- name: "User Management | Create non-root user '{{ added_user }}' with sudo privileges"
+  # Creates the primary administrative user account.
+  # Replaces direct root login with a named user for better auditability.
+  ansible.builtin.user:
     name: "{{ added_user }}"
     state: present
     groups: wheel
@@ -50,27 +103,36 @@
     shell: /bin/bash
   tags:
     - user
+    - create-user
 
-- name: Set authorized key for remote user
-  authorized_key:
+- name: "User Management | Deploy SSH public key for {{ added_user }}"
+  # SSH key-based authentication is more secure than password authentication.
+  # Prevents brute-force attacks and enables passwordless automation.
+  ansible.builtin.authorized_key:
     user: "{{ added_user }}"
     state: present
     key: "{{ copy_local_key }}"
   tags:
     - user
     - security
+    - ssh-keys
 
-- name: Set password for user
-  user:
+- name: "User Management | Set secure password for {{ added_user }}"
+  # Backup authentication method in case SSH keys are unavailable.
+  # Password is stored as SHA-512 hash for security.
+  ansible.builtin.user:
     name: "{{ added_user }}"
     state: present
     password: "{{ user_password | password_hash('sha512') }}"
   tags:
     - user
     - security
+    - password
 
-- name: Add deploy user to sudoers
-  lineinfile: 
+- name: "User Management | Add {{ added_user }} to sudoers with NOPASSWD"
+  # Redundant sudo configuration for compatibility with different Linux distributions.
+  # Ensures user has sudo access even if wheel group method doesn't work.
+  ansible.builtin.lineinfile:
     path: /etc/sudoers
     regexp: "{{ added_user }} ALL"
     line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
@@ -79,55 +141,80 @@
   tags:
     - user
     - security
+    - sudo
 
-# Package Management
-- name: Update apt cache
-  apt:
+# -----------------------------------------------------------------------------
+# SECTION 4: Package Management and System Updates
+# -----------------------------------------------------------------------------
+# Installs essential packages and applies system updates for security and stability.
+
+- name: "Package Management | Refresh apt package cache"
+  # Fresh package cache ensures we install the latest available versions.
+  # Cache is valid for 1 hour to avoid excessive repository queries.
+  ansible.builtin.apt:
     update_cache: yes
     cache_valid_time: 3600
   tags:
     - system
     - packages
+    - apt-cache
 
-- name: Install required system packages
-  apt:
+- name: "Package Management | Install essential system packages"
+  # Installs packages defined in vars/default.yml under 'sys_packages'.
+  # These typically include vim, curl, git, htop, and other admin tools.
+  ansible.builtin.apt:
     name: "{{ sys_packages }}"
     state: latest
     update_cache: yes
   tags:
     - system
     - packages
+    - install
 
-- name: Upgrade all packages to their latest version
-  apt:
+- name: "Package Management | Upgrade all installed packages to latest versions"
+  # Applies all available security and feature updates.
+  # Critical for maintaining system security posture.
+  ansible.builtin.apt:
     name: "*"
     state: latest
   tags:
     - system
     - packages
+    - upgrade
+    - security
 
-- name: Clean apt cache and remove unnecessary dependencies
-  block:
-    - name: Remove useless packages from the cache
-      apt:
+- name: "Package Management | Clean package cache and remove orphaned dependencies"
+  # Frees disk space by removing obsolete packages and cached .deb files.
+  # Removes dependencies that are no longer needed by any installed package.
+  ansible.builtin.block:
+    - name: "Package Cleanup | Remove cached package files"
+      ansible.builtin.apt:
         autoclean: yes
-    
-    - name: Remove dependencies that are no longer required
-      apt:
+
+    - name: "Package Cleanup | Remove orphaned dependencies"
+      ansible.builtin.apt:
         autoremove: yes
   tags:
     - system
     - packages
+    - cleanup
+    - maintenance
 
-# System Upgrade (Ubuntu version specific)
-- name: Check if Ubuntu version upgrade is needed
-  block:
-    - name: Check distribution version
-      debug:
+# -----------------------------------------------------------------------------
+# SECTION 5: Distribution Upgrade Management
+# -----------------------------------------------------------------------------
+# Handles Ubuntu version-specific configurations and EOL notices.
+
+- name: "System Upgrade | Check and prepare for distribution upgrades"
+  ansible.builtin.block:
+    - name: "System Info | Display current Ubuntu version"
+      ansible.builtin.debug:
         msg: 'This server is running Ubuntu {{ ansible_distribution_version }}'
 
-    - name: Remove EOL message of the day if applicable
-      file:
+    - name: "EOL Cleanup | Remove end-of-life MOTD warnings"
+      # Removes Ubuntu ESM (Extended Security Maintenance) notices.
+      # Only applicable for Ubuntu versions reaching end-of-life.
+      ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       with_items:
@@ -135,11 +222,15 @@
         - /run/motd.dynamic
       when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
 
-    - name: Ensure update-manager-core is installed
-      apt:
+    - name: "Upgrade Tools | Ensure update-manager-core is installed"
+      # Required for do-release-upgrade command.
+      # Enables automated distribution upgrades when needed.
+      ansible.builtin.apt:
         name: update-manager-core
         state: present
       when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
   tags:
     - system
-    - upgrade 
+    - upgrade
+    - version-check
+    - eol 

@@ -1,0 +1,8 @@
+---
+# Default variables for dev tools
+
+install_neovim: true
+install_nodejs: true
+install_claude_code: false  # Optional, requires npm
+
+nodejs_version: "22"  # LTS version

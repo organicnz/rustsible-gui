@@ -1,0 +1,45 @@
+---
+# =============================================================================
+# Certbot Role Default Variables
+# =============================================================================
+# These are default values for Certbot SSL/TLS certificate automation.
+# Override in vars/default.yml or vars/vault.yml for production.
+# =============================================================================
+
+# Email Configuration
+# -----------------------------------------------------------------------------
+# Email address for Let's Encrypt notifications and renewal reminders
+# REQUIRED - must be set in vars/default.yml
+# certbot_email: MUST_BE_DEFINED
+
+# Domain Configuration
+# -----------------------------------------------------------------------------
+# Include www subdomain in certificate
+# If true, certificate covers both example.com and www.example.com
+certbot_www_domain: true
+
+# Certificate Management
+# -----------------------------------------------------------------------------
+# Enable automatic certificate renewal via systemd timer
+certbot_auto_renew: true
+
+# Force certificate renewal even if valid certificate exists
+# Useful for testing or fixing certificate issues
+force_renew: false
+
+# Use standalone method instead of Nginx plugin
+# Only use if Nginx plugin fails or for testing
+certbot_create_standalone_cert: false
+
+# Renewal Settings
+# -----------------------------------------------------------------------------
+# Days before expiration to attempt renewal
+certbot_renew_before_expiry: 30
+
+# Post-renewal hook command (e.g., reload Nginx)
+certbot_post_hook: "systemctl reload nginx"
+
+# Feature Flags
+# -----------------------------------------------------------------------------
+# Enable Certbot installation and certificate management
+install_certbot: false

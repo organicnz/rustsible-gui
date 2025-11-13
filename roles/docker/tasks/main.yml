@@ -1,17 +1,49 @@
 ---
-# Docker Installation and Configuration
+# =============================================================================
+# DOCKER INSTALLATION AND CONFIGURATION ROLE
+# =============================================================================
+# Purpose: Install Docker CE, Docker Compose, and configure secure Docker daemon
+#          with comprehensive error handling and repository conflict resolution
+#
+# Selectable Tags:
+#   - docker          : All Docker-related tasks
+#   - docker-deps     : Install Docker dependencies only
+#   - docker-cleanup  : Clean existing Docker repository configurations
+#   - docker-repo     : Configure Docker repository
+#   - docker-install  : Install Docker packages
+#   - docker-compose  : Install Docker Compose
+#   - docker-service  : Manage Docker service
+#   - docker-python   : Install Python Docker module
+#   - docker-users    : Add users to docker group
+#   - docker-security : Apply Docker security configurations
+#   - docker-daemon   : Docker daemon configuration
+#   - verify          : Verification and health checks
+# =============================================================================
 
-- name: Check if Docker should be installed
-  debug:
+- name: "Docker Check | Display installation status"
+  ansible.builtin.debug:
     msg: "Docker installation is {{ 'enabled' if install_docker else 'disabled' }}"
   tags:
     - docker
+    - always
 
-- name: Install Docker and Docker Compose
-  block:
-    # Install prerequisites
-    - name: Install required dependencies
-      apt:
+- name: "Docker Installation | Complete Docker setup with error handling"
+  ansible.builtin.block:
+    # -------------------------------------------------------------------------
+    # SECTION 1: Prerequisites and Dependencies
+    # -------------------------------------------------------------------------
+    # Installs packages required for Docker repository setup and functionality.
+
+    - name: "Docker Prerequisites | Install required system packages"
+      # Essential packages for Docker installation:
+      # - apt-transport-https: Allows apt to retrieve packages over HTTPS
+      # - ca-certificates: Common CA certificates for SSL verification
+      # - curl: Downloads Docker GPG key and other resources
+      # - gnupg: GPG key management for repository verification
+      # - lsb-release: Determines Ubuntu version for correct repository
+      # - software-properties-common: Provides add-apt-repository command
+      # - python3-pip: Required for docker-py module installation
+      ansible.builtin.apt:
         pkg:
           - apt-transport-https
           - ca-certificates
@@ -23,29 +55,142 @@
         state: latest
         update_cache: true
       tags:
-        - docker
+        - docker-deps
         - packages
 
-    # Add Docker repository
-    - name: Add Docker GPG apt key
-      apt_key:
+    # -------------------------------------------------------------------------
+    # SECTION 2: Repository Conflict Resolution
+    # -------------------------------------------------------------------------
+    # Removes existing Docker configurations to prevent repository conflicts.
+    # Critical for systems with previous Docker installations or manual setups.
+
+    - name: "Docker Cleanup | Remove existing Docker GPG key files"
+      # Removes GPG keys from multiple possible locations.
+      # Prevents conflicts between old and new repository configurations.
+      # Locations cleaned:
+      # - /etc/apt/trusted.gpg.d/docker.gpg (deprecated location)
+      # - /etc/apt/keyrings/docker.gpg (old keyring format)
+      # - /etc/apt/keyrings/docker.asc (current format - will be recreated)
+      # - /usr/share/keyrings/docker-archive-keyring.gpg (alternative location)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/trusted.gpg.d/docker.gpg
+        - /etc/apt/keyrings/docker.gpg
+        - /etc/apt/keyrings/docker.asc
+        - /usr/share/keyrings/docker-archive-keyring.gpg
+      tags:
+        - docker-cleanup
+        - repo-cleanup
+
+    - name: "Docker Cleanup | Find all existing Docker repository files"
+      # Searches for any .list files containing 'docker' in sources.list.d.
+      # Registers results for deletion in next task.
+      ansible.builtin.find:
+        paths: /etc/apt/sources.list.d
+        patterns: "*docker*.list"
+      register: docker_repo_files
+      tags:
+        - docker-cleanup
+        - repo-cleanup
+
+    - name: "Docker Cleanup | Remove all Docker repository files"
+      # Deletes all Docker repository files found in previous task.
+      # Ensures clean slate for new repository configuration.
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ docker_repo_files.files }}"
+      tags:
+        - docker-cleanup
+        - repo-cleanup
+
+    - name: "Docker Cleanup | Remove Docker entries from main sources.list"
+      # Removes any Docker repository entries from main sources.list.
+      # Some installations incorrectly add Docker repos to this file.
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: .*download.docker.com.*
+        state: absent
+      tags:
+        - docker-cleanup
+        - repo-cleanup
+
+    # -------------------------------------------------------------------------
+    # SECTION 3: Docker Repository Configuration
+    # -------------------------------------------------------------------------
+    # Sets up official Docker repository with GPG key verification.
+    # Uses modern signed-by approach to avoid deprecated apt-key warnings.
+
+    - name: "Docker Repository | Create keyrings directory"
+      # Modern approach: Store GPG keys in /etc/apt/keyrings
+      # Replaces deprecated /etc/apt/trusted.gpg.d approach
+      # Directory must exist before adding Docker GPG key.
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+      tags:
+        - docker-repo
+        - gpg-setup
+
+    - name: "Docker Repository | Download Docker GPG key"
+      # Downloads Docker's official GPG key in ASCII-armored format.
+      # Key is used to verify authenticity of Docker packages.
+      # Uses get_url for idempotency (won't re-download if already present).
+      ansible.builtin.get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
       tags:
-        - docker
-        - packages
+        - docker-repo
+        - gpg-key
 
-    - name: Add Docker Repository
+    - name: "Docker Repository | Clean apt cache to prevent conflicts"
+      # Removes cached package metadata that might contain old Docker info.
+      # Ensures subsequent apt operations use fresh repository data.
+      command: apt-get clean
+      changed_when: false
+      tags:
+        - docker-repo
+        - cache-cleanup
+
+    - name: "Docker Repository | Update apt cache"
+      # Refreshes package metadata from all configured repositories.
+      # Ensures we have latest package information before adding Docker repo.
+      ansible.builtin.apt:
+        update_cache: yes
+      tags:
+        - docker-repo
+        - apt-update
+
+    - name: "Docker Repository | Add Docker APT repository with GPG verification"
+      # Adds official Docker repository for Ubuntu.
+      # Uses signed-by to associate GPG key with this specific repository.
+      # Architecture: Uses amd64 explicitly (modify for ARM/other architectures).
+      # Distribution: Uses ansible_distribution_release (focal, jammy, noble, etc.)
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
+        filename: docker
+        update_cache: yes
       tags:
-        - docker
-        - packages
+        - docker-repo
+        - apt-source
 
-    # Install Docker
-    - name: Install Docker packages
-      apt:
+    # -------------------------------------------------------------------------
+    # SECTION 4: Docker Engine Installation
+    # -------------------------------------------------------------------------
+    # Installs Docker Engine and core components.
+
+    - name: "Docker Installation | Install Docker Engine packages"
+      # Installs core Docker components:
+      # - docker-ce: Docker Engine (Community Edition) - the container runtime
+      # - docker-ce-cli: Docker command-line interface tools
+      # - containerd.io: Industry-standard container runtime
+      # Note: BuildX and Compose plugins installed separately if needed
+      ansible.builtin.apt:
         pkg:
           - docker-ce
           - docker-ce-cli
@@ -53,78 +198,139 @@
         state: latest
         update_cache: true
       tags:
-        - docker
+        - docker-install
         - packages
 
-    # Configure Docker users
-    - name: Create docker group
-      group:
+    # -------------------------------------------------------------------------
+    # SECTION 5: User and Group Management
+    # -------------------------------------------------------------------------
+    # Configures Docker group and user permissions.
+
+    - name: "Docker Users | Ensure docker group exists"
+      # Creates docker group if it doesn't exist.
+      # Required for granting Docker access to non-root users.
+      ansible.builtin.group:
         name: docker
         state: present
       tags:
-        - docker
+        - docker-users
+        - groups
         - security
 
-    - name: Add users to docker group
-      user:
+    - name: "Docker Users | Add specified users to docker group"
+      # Grants users permission to run Docker commands without sudo.
+      # WARNING: Members of docker group have root-equivalent access!
+      # They can mount host filesystem in containers and escape to root.
+      # Only add trusted users who already have sudo access.
+      # Users defined in vars/default.yml under 'docker_users' list.
+      ansible.builtin.user:
         name: "{{ item }}"
         groups: docker
         append: yes
-      loop: "{{ docker_users }}"
+      loop: "{{ docker_users | default([]) }}"
       tags:
-        - docker
+        - docker-users
+        - user-groups
         - security
 
-    # Install Docker Compose
-    - name: Install Docker Compose
-      get_url:
+    # -------------------------------------------------------------------------
+    # SECTION 6: Docker Compose Installation
+    # -------------------------------------------------------------------------
+    # Installs Docker Compose for multi-container applications.
+
+    - name: "Docker Compose | Install specific version of Docker Compose"
+      # Downloads specific Docker Compose version from GitHub releases.
+      # Used when docker_compose_version is defined and not "latest".
+      # Version format: v2.24.0, v2.23.3, etc.
+      ansible.builtin.get_url:
         url: "https://github.com/docker/compose/releases/{{ docker_compose_version }}/download/docker-compose-Linux-x86_64"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
-      when: docker_compose_version != "latest"
+      when: docker_compose_version is defined and docker_compose_version != "latest"
       tags:
-        - docker
+        - docker-compose
+        - compose-install
 
-    - name: Install latest Docker Compose
-      get_url:
+    - name: "Docker Compose | Install latest Docker Compose"
+      # Downloads latest Docker Compose version from GitHub.
+      # Used when docker_compose_version is undefined or set to "latest".
+      # GitHub redirects to actual latest release automatically.
+      ansible.builtin.get_url:
         url: https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64
         dest: /usr/local/bin/docker-compose
         mode: '0755'
-      when: docker_compose_version == "latest"
+      when: docker_compose_version is not defined or docker_compose_version == "latest"
       tags:
-        - docker
+        - docker-compose
+        - compose-install
 
-    # Install Python Docker module
-    - name: Try to install python3-docker via apt
-      apt:
+    # -------------------------------------------------------------------------
+    # SECTION 7: Python Docker Module
+    # -------------------------------------------------------------------------
+    # Installs Python Docker SDK for Ansible Docker modules.
+
+    - name: "Docker Python | Attempt installation via apt package"
+      # First tries to install python3-docker from Ubuntu repositories.
+      # Preferred method when available - uses system package management.
+      # May not be available on all Ubuntu versions.
+      ansible.builtin.apt:
         name: python3-docker
         state: present
       tags:
-        - docker
+        - docker-python
+        - python-modules
         - packages
 
-    - name: Install Docker module for Python with --break-system-packages flag
+    - name: "Docker Python | Install Docker SDK via pip for Ubuntu 24.04+"
+      # Fallback: Install docker-py via pip with --break-system-packages.
+      # Required for Ubuntu 24.04+ due to PEP 668 (externally managed environments).
+      # Without this flag, pip refuses to install in system Python environment.
+      # failed_when: false - Don't fail if apt installation succeeded above.
       pip:
         name: docker
         extra_args: --break-system-packages
       when: ansible_distribution_version is version('24.04', '>=')
       failed_when: false
       tags:
-        - docker
-        - packages
+        - docker-python
+        - python-modules
+        - pip-install
 
-    # Configure Docker daemon with improved security
-    - name: Create Docker daemon directory
-      file:
+    # -------------------------------------------------------------------------
+    # SECTION 8: Docker Daemon Security Configuration
+    # -------------------------------------------------------------------------
+    # Applies security hardening to Docker daemon.
+
+    - name: "Docker Security | Ensure Docker daemon directory exists"
+      # Creates /etc/docker directory if it doesn't exist.
+      # Required for daemon.json configuration file.
+      ansible.builtin.file:
         path: /etc/docker
         state: directory
         mode: '0755'
       tags:
-        - docker
-        - security
+        - docker-daemon
+        - docker-security
 
-    - name: Configure Docker daemon with security settings
-      copy:
+    - name: "Docker Security | Configure Docker daemon with hardening settings"
+      # Applies production-ready Docker daemon configuration:
+      #
+      # Logging:
+      # - log-driver: json-file - Structured logging for container output
+      # - max-size: 10m - Limit individual log file size to 10MB
+      # - max-file: 3 - Keep only 3 rotated log files (30MB total per container)
+      #
+      # Reliability:
+      # - live-restore: true - Keep containers running during daemon downtime/upgrades
+      #
+      # Security:
+      # - userland-proxy: false - Use iptables for port forwarding (more efficient, less attack surface)
+      # - no-new-privileges: true - Prevent containers from gaining additional privileges
+      #
+      # Additional recommended settings (not included):
+      # - "icc": false - Disable inter-container communication by default
+      # - "userns-remap": "default" - Enable user namespace remapping for stronger isolation
+      ansible.builtin.copy:
         content: |
           {
             "log-driver": "json-file",
@@ -142,36 +348,102 @@
         mode: '0644'
       notify: restart docker
       tags:
-        - docker
+        - docker-daemon
+        - docker-security
         - security
 
-    # Start and enable Docker service
-    - name: Start and enable Docker service
-      service:
+    # -------------------------------------------------------------------------
+    # SECTION 9: Docker Service Management
+    # -------------------------------------------------------------------------
+    # Starts Docker daemon and enables it to start on boot.
+
+    - name: "Docker Service | Start and enable Docker daemon"
+      # Ensures Docker service:
+      # - Starts immediately (state: started)
+      # - Starts automatically on system boot (enabled: yes)
+      # Essential for container orchestration and automation.
+      ansible.builtin.service:
         name: docker
         state: started
         enabled: yes
       tags:
-        - docker
+        - docker-service
+        - service-management
 
-    # Verify Docker installation
-    - name: Verify Docker is running
+    # -------------------------------------------------------------------------
+    # SECTION 10: Installation Verification
+    # -------------------------------------------------------------------------
+    # Validates Docker installation and displays version information.
+
+    - name: "Docker Verification | Check Docker is running and accessible"
+      # Runs 'docker info' to verify Docker daemon is operational.
+      # This command requires Docker daemon to be running and accessible.
+      # ignore_errors: Don't fail playbook if verification fails.
       command: docker info
       register: docker_info
       changed_when: false
       ignore_errors: true
       tags:
-        - docker
         - verify
+        - health-check
 
-    - name: Display Docker version
-      debug:
+    - name: "Docker Verification | Display Docker version and status"
+      # Shows first line of docker info output (version and status).
+      # Only displays if docker info command succeeded.
+      ansible.builtin.debug:
         msg: "Docker is running successfully: {{ docker_info.stdout_lines[0] }}"
       when: docker_info.rc == 0
       tags:
-        - docker
         - verify
+        - health-check
 
   when: install_docker | bool
+
+  rescue:
+    # -------------------------------------------------------------------------
+    # Error Handling and Troubleshooting
+    # -------------------------------------------------------------------------
+    # Provides helpful error messages and manual recovery instructions.
+
+    - name: "Error Handler | Display installation failure message"
+      ansible.builtin.debug:
+        msg: Failed to install Docker. Please check the error output above for details.
+
+    - name: "Error Handler | Provide manual cleanup instructions"
+      ansible.builtin.debug:
+        msg: |
+
+          ============================================================
+          DOCKER INSTALLATION FAILED - MANUAL RECOVERY STEPS
+          ============================================================
+
+          If this is a repository conflict error, try these steps:
+
+          1. Remove Docker entries from sources.list:
+             sudo sed -i '/download.docker.com/d' /etc/apt/sources.list
+
+          2. Remove all Docker repository files:
+             sudo rm -f /etc/apt/sources.list.d/*docker*.list
+
+          3. Remove all Docker GPG keys:
+             sudo rm -f /etc/apt/trusted.gpg.d/docker.gpg
+             sudo rm -f /etc/apt/keyrings/docker*
+             sudo rm -f /usr/share/keyrings/docker*
+
+          4. Clean and update apt:
+             sudo apt-get clean
+             sudo apt-get update
+
+          5. Re-run this playbook:
+             ansible-playbook playbook.yml -t docker -l webservers
+
+          For other errors, check:
+          - Network connectivity to download.docker.com
+          - Ubuntu version compatibility
+          - Available disk space (df -h)
+          - Apt logs: /var/log/apt/history.log
+
+          ============================================================
+
   tags:
-    - docker 
+    - docker

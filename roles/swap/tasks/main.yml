@@ -1,0 +1,282 @@
+---
+# =============================================================================
+# SWAP SPACE CONFIGURATION ROLE
+# =============================================================================
+# Purpose: Intelligently configure swap space based on available system RAM
+#          to optimize memory management and prevent OOM situations
+#
+# Intelligent Sizing Algorithm:
+#   - Systems with <2GB RAM:  Swap = 2x RAM (handles high memory pressure)
+#   - Systems with 2-4GB RAM: Swap = 1.5x RAM (balanced approach)
+#   - Systems with 4-8GB RAM: Swap = 1x RAM (minimal swap usage)
+#   - Systems with 8GB+ RAM:  Swap = 1x RAM (primarily for hibernation)
+#
+# Selectable Tags:
+#   - swap            : All swap-related tasks
+#   - swap-info       : Display system memory and swap information
+#   - swap-calculate  : Calculate appropriate swap size
+#   - swap-create     : Create swap file
+#   - swap-configure  : Configure swap parameters (swappiness, cache pressure)
+#   - swap-enable     : Enable swap and add to fstab
+#   - swap-optimize   : Optimize swap performance parameters
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION 1: System Memory Analysis
+# -----------------------------------------------------------------------------
+# Analyzes system memory to determine appropriate swap size.
+
+- name: "Memory Analysis | Read system memory information from /proc/meminfo"
+  # Reads memory information directly from kernel interface.
+  # More reliable than alternatives like 'free' command which may vary by distro.
+  command: cat /proc/meminfo
+  register: meminfo
+  changed_when: false
+  tags:
+    - always
+    - swap
+    - swap-info
+    - system
+
+- name: "Memory Analysis | Calculate total memory in MB and GB"
+  # Extracts MemTotal from /proc/meminfo and converts to usable units.
+  # MemTotal is in KB, so we divide by 1024 for MB, 1024*1024 for GB.
+  # Example: 8192000 KB → 8000 MB → 7.8 GB
+  ansible.builtin.set_fact:
+    mem_total_mb: "{{ (meminfo.stdout | regex_search('MemTotal:\\s+([0-9]+)', '\\1') | first | int) // 1024 }}"
+    mem_total_gb: "{{ ((meminfo.stdout | regex_search('MemTotal:\\s+([0-9]+)', '\\1') | first | int) // 1024 // 1024) }}"
+  tags:
+    - swap
+    - swap-calculate
+    - swap-info
+
+- name: "Memory Analysis | Calculate appropriate swap size using intelligent algorithm"
+  # Implements industry best practices for swap sizing:
+  # - Very small systems (< 2GB): Need large swap for memory pressure
+  # - Small systems (2-4GB): Moderate swap for occasional pressure
+  # - Medium systems (4-8GB): Equal swap primarily for hibernation
+  # - Large systems (8GB+): Minimal swap, rarely used
+  ansible.builtin.set_fact:
+    swap_size_gb: >-
+      {{
+        (mem_total_gb | int * 2) if (mem_total_gb | int) < 2 else
+        (mem_total_gb | int * 1.5) | round(0) | int if (mem_total_gb | int) < 4 else
+        (mem_total_gb | int) if (mem_total_gb | int) < 8 else
+        (mem_total_gb | int)
+      }}
+  tags:
+    - swap
+    - swap-calculate
+
+# -----------------------------------------------------------------------------
+# SECTION 2: Swap File Status Check
+# -----------------------------------------------------------------------------
+# Checks if swap file exists and determines if resize is needed.
+
+- name: "Swap Status | Check if swap file already exists at /swapfile"
+  # Determines if we need to create or resize swap file.
+  # Important for idempotency - don't recreate if correct size exists.
+  ansible.builtin.stat:
+    path: /swapfile
+  register: swap_file_check
+  tags:
+    - swap
+    - swap-info
+
+- name: "Swap Status | Get current swap file size in MB"
+  # Measures existing swap file to compare with calculated target size.
+  # Only runs if swap file exists to avoid errors.
+  shell: du -m /swapfile | cut -f1
+  register: current_swap_size
+  when: swap_file_check.stat.exists
+  changed_when: false
+  failed_when: false
+  tags:
+    - swap
+    - swap-info
+
+- name: "Swap Status | Check if swap is currently active"
+  # Verifies if any swap devices are currently in use.
+  # Needed to determine if we need to run swapoff before modifying.
+  command: swapon -s
+  register: swap_active
+  changed_when: false
+  tags:
+    - swap
+    - swap-info
+
+- name: "Swap Info | Display swap configuration details and planned actions"
+  # Provides transparency about what will happen during swap configuration.
+  # Helps users understand sizing decisions and planned modifications.
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "SWAP CONFIGURATION ANALYSIS"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "System Memory: {{ mem_total_mb }} MB ({{ mem_total_gb }} GB)"
+      - "Calculated Swap Size: {{ swap_size_gb }} GB ({{ swap_size_gb | int * 1024 }} MB)"
+      - "{% if swap_file_check.stat.exists %}Current Swap File: {{ current_swap_size.stdout | default('0') }} MB{% else %}No existing swap file found{% endif %}"
+      - "Swap Status: {% if swap_active.stdout.find('/swapfile') != -1 %}ACTIVE{% else %}INACTIVE{% endif %}"
+      - "Action: {% if swap_file_check.stat.exists and (current_swap_size.stdout | int) != (swap_size_gb | int * 1024) %}RESIZE (recreate swap file){% elif not swap_file_check.stat.exists %}CREATE (new swap file){% else %}KEEP (correct size exists){% endif %}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  tags:
+    - swap
+    - swap-info
+
+# -----------------------------------------------------------------------------
+# SECTION 3: Swap Space Configuration
+# -----------------------------------------------------------------------------
+# Creates or resizes swap file and configures system parameters.
+
+- name: "Swap Configuration | Complete swap setup with error handling"
+  ansible.builtin.block:
+    - name: "Swap Disable | Turn off existing swap before modification"
+      # Must disable swap before modifying the swap file.
+      # Only runs if swap is active AND needs resizing.
+      # Prevents "device or resource busy" errors.
+      command: swapoff /swapfile
+      when:
+        - swap_file_check.stat.exists
+        - swap_active.stdout.find('/swapfile') != -1
+        - (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+      tags:
+        - swap-create
+
+    - name: "Swap Cleanup | Remove existing swap file for resize"
+      # Deletes old swap file before creating new one with different size.
+      # Only runs when size adjustment is needed.
+      # Ensures clean slate for new swap file creation.
+      ansible.builtin.file:
+        path: /swapfile
+        state: absent
+      when:
+        - swap_file_check.stat.exists
+        - (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+      tags:
+        - swap-create
+
+    - name: "Swap Creation | Allocate swap file using dd command"
+      # Creates swap file using dd for precise size control.
+      # bs=1M: 1MB block size for efficient writing
+      # count: Number of 1MB blocks to write (size in GB * 1024)
+      # Creates contiguous file for better performance.
+      # IMPORTANT: This task can take several minutes on large files!
+      command: "dd if=/dev/zero of=/swapfile bs=1M count={{ swap_size_gb | int * 1024 }}"
+      when:
+        - not swap_file_check.stat.exists or (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+      tags:
+        - swap-create
+
+    - name: "Swap Security | Set restrictive permissions on swap file"
+      # Sets 0600 (rw-------) permissions on swap file.
+      # Critical security requirement: swap may contain sensitive data from memory.
+      # Only root should be able to read/write swap file.
+      ansible.builtin.file:
+        path: /swapfile
+        mode: '0600'
+      tags:
+        - swap-create
+        - security
+
+    - name: "Swap Format | Initialize swap area on new file"
+      # Formats the file as swap space using mkswap.
+      # Creates swap signature and sets up swap area structure.
+      # Only runs when swap file is newly created or resized.
+      command: mkswap /swapfile
+      when:
+        - not swap_file_check.stat.exists or (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+      tags:
+        - swap-create
+
+    - name: "Swap Activation | Enable swap file for immediate use"
+      # Activates swap file with swapon command.
+      # Only runs if swap is not already active.
+      # Makes swap available immediately without reboot.
+      command: swapon /swapfile
+      when: swap_active.stdout.find('/swapfile') == -1
+      tags:
+        - swap-enable
+
+    - name: "Swap Persistence | Add swap to /etc/fstab for boot persistence"
+      # Ensures swap is activated automatically on system boot.
+      # Uses regexp to prevent duplicate entries.
+      # Format: device mountpoint type options dump pass
+      # defaults: Uses default mount options
+      # 0 0: No dump, no fsck (swap doesn't need filesystem check)
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile swap swap defaults 0 0"
+        state: present
+        regexp: "^/swapfile"
+      tags:
+        - swap-enable
+        - swap-configure
+
+    - name: "Swap Optimization | Set swappiness to 10 for optimal performance"
+      # Controls how aggressively kernel swaps memory to disk.
+      # Default: 60 (swaps relatively aggressively)
+      # Setting: 10 (only swap when necessary, prefer RAM)
+      # Recommended for:
+      # - Systems with adequate RAM
+      # - Desktop/server workloads
+      # - Better application performance
+      # Lower values = less swapping = better performance (when RAM available)
+      ansible.builtin.sysctl:
+        name: vm.swappiness
+        value: "10"
+        state: present
+        reload: yes
+      tags:
+        - swap-configure
+        - swap-optimize
+        - performance
+
+    - name: "Swap Optimization | Set cache pressure to 50 for balanced caching"
+      # Controls tendency to reclaim memory used for caching directory/inode objects.
+      # Default: 100 (balanced)
+      # Setting: 50 (favor retaining cache)
+      # Benefits:
+      # - Improves filesystem metadata access speed
+      # - Better performance for file-heavy workloads
+      # - Reduces disk I/O for repeated file operations
+      # Lower values = kernel prefers to retain cache = faster file access
+      ansible.builtin.sysctl:
+        name: vm.vfs_cache_pressure
+        value: "50"
+        state: present
+        reload: yes
+      tags:
+        - swap-configure
+        - swap-optimize
+        - performance
+
+  rescue:
+    # -------------------------------------------------------------------------
+    # Error Handling
+    # -------------------------------------------------------------------------
+    # Provides helpful troubleshooting information on failure.
+
+    - name: "Error Handler | Display swap setup failure message"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          SWAP CONFIGURATION FAILED
+          ============================================================
+
+          Possible causes:
+          - Insufficient disk space (need {{ swap_size_gb }} GB free)
+          - Permission issues (requires root access)
+          - Filesystem doesn't support swap files (rare)
+          - Existing swap is locked by another process
+
+          Troubleshooting steps:
+          1. Check available disk space: df -h /
+          2. Verify no swap conflicts: swapon -s
+          3. Check system logs: journalctl -xe
+          4. Manually disable swap if needed: swapoff -a
+
+          ============================================================
+
+  tags:
+    - swap
+    - system

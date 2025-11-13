@@ -1,0 +1,61 @@
+---
+# Ansible Vault Template for Sensitive Credentials
+#
+# INSTRUCTIONS:
+# 1. Copy this file: cp vault.yml.template vault.yml
+# 2. Edit vault.yml with your actual credentials
+# 3. Encrypt it: ansible-vault encrypt vars/vault.yml
+# 4. Never commit the unencrypted vault.yml to version control!
+#
+# To edit encrypted vault: ansible-vault edit vars/vault.yml
+# To view encrypted vault: ansible-vault view vars/vault.yml
+# To change vault password: ansible-vault rekey vars/vault.yml
+
+# MySQL/MariaDB Credentials
+vault_mysql_root_password: "CHANGEME_STRONG_ROOT_PASSWORD"
+vault_mysql_password: "CHANGEME_STRONG_DB_PASSWORD"
+vault_mysql_user: "app_user"
+vault_mysql_db: "app_database"
+
+# GitHub Personal Access Token (for cloning private repos)
+vault_github_username: "your_github_username"
+vault_github_pat: "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# GitLab Personal Access Token (for cloning private repos)
+vault_gitlab_username: "your_gitlab_username"
+vault_gitlab_pat: "glpat-XXXXXXXXXXXXXXXXXXXX"
+
+# Additional sensitive credentials can be added below
+# Examples:
+
+# API Keys
+# vault_api_key_service1: "your_api_key_here"
+# vault_api_key_service2: "your_api_key_here"
+
+# SMTP Credentials (if setting up email notifications)
+# vault_smtp_host: "smtp.gmail.com"
+# vault_smtp_port: 587
+# vault_smtp_username: "your_email@gmail.com"
+# vault_smtp_password: "your_app_password"
+
+# SSL Certificate Credentials
+# vault_ssl_cert_email: "admin@yourdomain.com"
+
+# Backup Service Credentials
+# vault_backup_access_key: "your_backup_access_key"
+# vault_backup_secret_key: "your_backup_secret_key"
+
+# Monitoring Service API Keys
+# vault_monitoring_api_key: "your_monitoring_api_key"
+
+# Cloud Provider Credentials (if needed)
+# vault_aws_access_key_id: "AKIAXXXXXXXXXXXXXXXX"
+# vault_aws_secret_access_key: "your_secret_access_key"
+# vault_do_token: "dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# SSH Passwords (if absolutely necessary, prefer SSH keys)
+# vault_ssh_password: "strong_ssh_password"
+
+# Application-Specific Secrets
+# vault_app_secret_key: "your_app_secret_key"
+# vault_app_encryption_key: "your_encryption_key"

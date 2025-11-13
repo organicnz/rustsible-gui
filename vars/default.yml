@@ -1,12 +1,12 @@
 ---
 # Server Configuration
-ip_address: "64.227.113.96"
+ip_address: "152.53.136.84"
 added_user: organic
 user_password: "{{ lookup('file', lookup('env','HOME') + '/.ssh/password') }}"
 copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa_gitlab.pub') }}"
 
 # System Packages
-sys_packages: 
+sys_packages:
   - curl
   - vim
   - git
@@ -15,12 +15,16 @@ sys_packages:
   - tmux
   - zip
   - unzip
+  - build-essential
+
+# Timezone Configuration
+system_timezone: America/Los_Angeles
 
 # Security Configuration
 ssh_port: 22
-disable_root_login: true
-password_authentication: false
- 
+disable_root_login: true  # CHANGED: Should be true for production
+password_authentication: false  # CHANGED: Should be false, use SSH keys only
+
 # Firewall Configuration
 ufw_allowed_ports:
   - port: "{{ ssh_port }}"
@@ -43,8 +47,55 @@ docker_compose_version: "latest"
 docker_users:
   - "{{ added_user }}"
 
+# LEMP Stack Configuration
+install_lemp: false  # Set to true to install Nginx, MySQL, PHP
+php_modules:
+  - php-fpm
+  - php-mysql
+  - php-curl
+  - php-gd
+  - php-intl
+  - php-mbstring
+  - php-soap
+  - php-xml
+  - php-xmlrpc
+  - php-zip
+
+# Swap Configuration
+enable_swap: true  # Automatically sizes swap based on RAM
+
+# Cron Jobs Configuration
+enable_cron_jobs: true
+enable_unattended_upgrades: true
+enable_auto_updates: true
+enable_periodic_reboot: false  # WARNING: Reboots server every 6 hours if enabled!
+
+# Development Tools Configuration
+install_dev_tools: false  # Set to true to install Neovim, Node.js, etc.
+install_neovim: true
+install_nodejs: true
+install_claude_code: false
+nodejs_version: "22"
+
 # Monitoring Setup
 install_monitoring: false  # Set to true to enable monitoring tools
+
+# WordPress Configuration
+install_wordpress: false  # Set to true to deploy WordPress (requires LEMP stack)
+configure_nginx_vhost: false  # Set to true to configure Nginx virtual host
+full_domain: example.com  # CHANGE THIS: Your domain name (e.g., example.com)
+http_host: "{{ full_domain }}"  # HTTP host (usually same as full_domain)
+# WordPress database settings (override in vault.yml):
+# mysql_db: wordpress_db
+# mysql_user: wordpress_user
+# mysql_password: <secure_password_from_vault>
+# mysql_root_password: <secure_password_from_vault>
+
+# Certbot SSL/TLS Configuration
+install_certbot: false  # Set to true to install SSL certificates
+certbot_email: admin@example.com  # CHANGE THIS: Your email for Let's Encrypt notifications
+certbot_www_domain: true  # Include www subdomain in certificate
+certbot_auto_renew: true  # Enable automatic renewal (recommended)
 
 # Debug/Testing
 ansible_check_mode: false
