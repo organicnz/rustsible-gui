@@ -233,18 +233,18 @@ class ProvisioningGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
-        # Canvas for scrolling with modern styling
-        canvas = tk.Canvas(main_frame, bg=self.colors['bg'], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, style='Main.TFrame')
+        # Canvas for scrolling with modern styling (store as instance variable)
+        self.canvas = tk.Canvas(main_frame, bg=self.colors['bg'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=self.canvas.yview)
+        scrollable_frame = ttk.Frame(self.canvas, style='Main.TFrame')
 
         scrollable_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
 
         # Modern header with enhanced styling
         header_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
@@ -483,32 +483,54 @@ class ProvisioningGUI:
         cache_label.pack()
 
         # Pack canvas and scrollbar
-        canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
 
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        # Enable trackpad/mousewheel scrolling (macOS and other platforms)
+        # Enable trackpad/mousewheel scrolling for all platforms
+        self._bind_mousewheel(self.canvas)
+
+    def _bind_mousewheel(self, widget):
+        """Bind mousewheel/trackpad scrolling events to the canvas"""
+        import platform
+
         def on_mousewheel(event):
-            """Handle mousewheel and trackpad scrolling across platforms"""
-            # macOS uses event.delta directly (positive = up, negative = down)
-            # Values are typically small (1, -1) for trackpad gestures
-            canvas.yview_scroll(int(-1 * event.delta), "units")
+            """Handle mousewheel and trackpad scrolling"""
+            # macOS uses event.delta directly (typically ±1 for trackpad)
+            # Windows uses larger values (±120)
+            self.canvas.yview_scroll(int(-1 * event.delta), "units")
 
-        def on_linux_scroll(event):
-            """Handle Linux mousewheel scrolling"""
-            if event.num == 4:
-                canvas.yview_scroll(-1, "units")
-            elif event.num == 5:
-                canvas.yview_scroll(1, "units")
+        def on_linux_scroll_up(event):
+            """Handle Linux scroll up"""
+            self.canvas.yview_scroll(-1, "units")
 
-        # Bind mousewheel events for different platforms
-        # macOS and Windows
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
-        # Linux
-        canvas.bind_all("<Button-4>", on_linux_scroll)
-        canvas.bind_all("<Button-5>", on_linux_scroll)
+        def on_linux_scroll_down(event):
+            """Handle Linux scroll down"""
+            self.canvas.yview_scroll(1, "units")
+
+        # Detect platform
+        system = platform.system()
+
+        if system == "Darwin":  # macOS
+            # macOS requires binding to the widget and all its children
+            widget.bind("<MouseWheel>", on_mousewheel)
+            self.root.bind("<MouseWheel>", on_mousewheel)
+            # Also bind to all child widgets
+            def bind_to_children(w):
+                w.bind("<MouseWheel>", on_mousewheel, add="+")
+                for child in w.winfo_children():
+                    bind_to_children(child)
+            # Bind after widget is fully created
+            self.root.after(100, lambda: bind_to_children(self.root))
+        elif system == "Windows":
+            self.root.bind("<MouseWheel>", on_mousewheel)
+        else:  # Linux
+            widget.bind("<Button-4>", on_linux_scroll_up)
+            widget.bind("<Button-5>", on_linux_scroll_down)
+            self.root.bind("<Button-4>", on_linux_scroll_up)
+            self.root.bind("<Button-5>", on_linux_scroll_down)
 
     def toggle_reboot_config(self):
         """Enable/disable reboot hour selection based on checkbox state"""
