@@ -179,6 +179,42 @@
       tags:
         - always
 
+    - name: Display swap memory planning (when enabled)
+      block:
+        - name: Read system memory information
+          command: cat /proc/meminfo
+          register: meminfo_pretask
+          changed_when: false
+
+        - name: Calculate total memory in GB
+          ansible.builtin.set_fact:
+            mem_total_gb_pretask: "{{ ((meminfo_pretask.stdout | regex_search('MemTotal:\\s+([0-9]+)', '\\1') | first | int) // 1024 // 1024) }}"
+
+        - name: Calculate planned swap size using intelligent algorithm
+          ansible.builtin.set_fact:
+            planned_swap_gb: >-
+              {{
+                (mem_total_gb_pretask | int * 2) if (mem_total_gb_pretask | int) < 2 else
+                (mem_total_gb_pretask | int * 1.5) | round(0) | int if (mem_total_gb_pretask | int) < 4 else
+                (mem_total_gb_pretask | int) if (mem_total_gb_pretask | int) < 8 else
+                (mem_total_gb_pretask | int)
+              }}
+
+        - name: Display memory and swap planning information
+          debug:
+            msg:
+              - ""
+              - "\033[1;34m┌─────────────────────────────────────────────────────────────┐\033[0m"
+              - "\033[1;34m│           💾 SWAP MEMORY PLANNING                           │\033[0m"
+              - "\033[1;34m└─────────────────────────────────────────────────────────────┘\033[0m"
+              - "  \033[1;36m▸\033[0m System RAM:    \033[1;33m{{ mem_total_gb_pretask }} GB\033[0m"
+              - "  \033[1;36m▸\033[0m Planned Swap:  \033[1;33m{{ planned_swap_gb }} GB\033[0m"
+              - "  \033[1;90m▸\033[0m Algorithm:     \033[1;90m{{ 'RAM × 2 (low memory system)' if (mem_total_gb_pretask | int) < 2 else 'RAM × 1.5 (moderate memory)' if (mem_total_gb_pretask | int) < 4 else 'RAM × 1 (adequate memory)' if (mem_total_gb_pretask | int) < 8 else 'RAM × 1 (high memory system)' }}\033[0m"
+              - ""
+      when: enable_swap | bool
+      tags:
+        - always
+
     - name: Check for Docker repository conflicts
       command: grep -l "download.docker.com" /etc/apt/sources.list /etc/apt/sources.list.d/*.list
       register: docker_repo_check
