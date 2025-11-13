@@ -22,19 +22,39 @@ class ProvisioningGUI:
         # Cache file location
         self.cache_file = Path(__file__).parent / '.gui_config_cache.json'
 
-        # Modern dark mode color scheme
+        # Modern dark mode color scheme with extended palette
         self.colors = {
             'bg': '#1a1d23',           # Dark background
             'fg': '#e8eaed',           # Light text
             'primary': '#5dade2',      # Bright blue
+            'primary_hover': '#3498db', # Primary hover
             'success': '#2ecc71',      # Bright green
+            'success_hover': '#27ae60', # Success hover
             'danger': '#e74c3c',       # Red
+            'danger_hover': '#c0392b',  # Danger hover
             'warning': '#f39c12',      # Orange
+            'warning_hover': '#e67e22', # Warning hover
             'info': '#1abc9c',         # Teal
             'card_bg': '#252930',      # Dark card background
+            'card_hover': '#2d323a',   # Card hover
             'border': '#3a3f4b',       # Dark border
+            'border_light': '#4a505f', # Lighter border
             'text_gray': '#a0a6b1',    # Light gray text
-            'hover': '#3498db'         # Hover blue
+            'text_dim': '#6b7280',     # Dimmed text
+            'input_bg': '#2a2e38',     # Input background
+            'input_focus': '#323844',  # Input focus
+            'hover': '#3498db',        # Hover blue
+            'accent': '#9b59b6',       # Purple accent
+        }
+
+        # Spacing scale (8px base)
+        self.spacing = {
+            'xs': 4,
+            'sm': 8,
+            'md': 16,
+            'lg': 24,
+            'xl': 32,
+            'xxl': 48
         }
 
         # Set root background
@@ -113,63 +133,88 @@ class ProvisioningGUI:
             pass
 
     def setup_styles(self):
-        """Configure modern ttk styles"""
+        """Configure modern ttk styles with best practices"""
         style = ttk.Style()
 
         # Configure main frame style
         style.configure('Main.TFrame', background=self.colors['bg'])
 
-        # Configure card-like label frames
+        # Configure card-like label frames with better styling
         style.configure('Card.TLabelframe',
                        background=self.colors['card_bg'],
-                       borderwidth=2,
-                       relief='flat')
+                       borderwidth=1,
+                       relief='solid',
+                       bordercolor=self.colors['border_light'])
         style.configure('Card.TLabelframe.Label',
                        background=self.colors['card_bg'],
                        foreground=self.colors['primary'],
-                       font=('SF Pro Display', 13, 'bold'))
+                       font=('SF Pro Display', 14, 'bold'),
+                       padding=(self.spacing['sm'], self.spacing['xs']))
 
-        # Configure labels
+        # Configure labels with better hierarchy
         style.configure('Title.TLabel',
                        background=self.colors['bg'],
                        foreground=self.colors['fg'],
-                       font=('SF Pro Display', 24, 'bold'))
+                       font=('SF Pro Display', 26, 'bold'))
         style.configure('Subtitle.TLabel',
-                       background=self.colors['card_bg'],
+                       background=self.colors['bg'],
                        foreground=self.colors['text_gray'],
-                       font=('SF Pro Text', 10))
+                       font=('SF Pro Text', 12))
         style.configure('Label.TLabel',
                        background=self.colors['card_bg'],
                        foreground=self.colors['fg'],
-                       font=('SF Pro Text', 11))
+                       font=('SF Pro Text', 11, 'normal'))
+        style.configure('SectionLabel.TLabel',
+                       background=self.colors['card_bg'],
+                       foreground=self.colors['text_dim'],
+                       font=('SF Pro Text', 10, 'bold'))
 
-        # Configure checkbuttons
+        # Configure checkbuttons with better spacing
         style.configure('TCheckbutton',
                        background=self.colors['card_bg'],
                        foreground=self.colors['fg'],
-                       font=('SF Pro Text', 11))
+                       font=('SF Pro Text', 11),
+                       padding=self.spacing['xs'])
+        style.map('TCheckbutton',
+                 background=[('active', self.colors['card_hover'])],
+                 foreground=[('active', self.colors['fg'])])
 
-        # Configure entries
+        # Configure entries with better styling
         style.configure('TEntry',
-                       fieldbackground='#2a2e38',
-                       foreground='#e8eaed',
-                       font=('SF Mono', 11))
+                       fieldbackground=self.colors['input_bg'],
+                       foreground=self.colors['fg'],
+                       font=('SF Mono', 11),
+                       borderwidth=1,
+                       relief='solid',
+                       padding=self.spacing['sm'])
+        style.map('TEntry',
+                 fieldbackground=[('focus', self.colors['input_focus'])],
+                 bordercolor=[('focus', self.colors['primary'])])
 
-        # Configure primary button
+        # Configure primary button with enhanced styling
         style.configure('Primary.TButton',
-                       font=('SF Pro Text', 12, 'bold'),
-                       padding=(20, 10))
+                       font=('SF Pro Text', 13, 'bold'),
+                       padding=(self.spacing['lg'], self.spacing['md']),
+                       borderwidth=0,
+                       relief='flat')
         style.map('Primary.TButton',
-                 background=[('active', self.colors['hover'])])
+                 background=[('active', self.colors['primary_hover']),
+                           ('pressed', self.colors['primary'])],
+                 foreground=[('active', 'white')])
 
         # Configure secondary button
         style.configure('Secondary.TButton',
                        font=('SF Pro Text', 11),
-                       padding=(15, 8))
+                       padding=(self.spacing['md'], self.spacing['sm']),
+                       borderwidth=1,
+                       relief='solid')
+        style.map('Secondary.TButton',
+                 background=[('active', self.colors['card_hover'])],
+                 bordercolor=[('active', self.colors['border_light'])])
 
     def create_widgets(self):
         # Main container with scrollbar
-        main_frame = ttk.Frame(self.root, padding="20", style='Main.TFrame')
+        main_frame = ttk.Frame(self.root, padding=str(self.spacing['lg']), style='Main.TFrame')
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         self.root.columnconfigure(0, weight=1)
@@ -188,79 +233,81 @@ class ProvisioningGUI:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Modern header with subtitle
+        # Modern header with enhanced styling
         header_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
-        header_frame.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        header_frame.grid(row=0, column=0, columnspan=2, pady=(0, self.spacing['xl']))
 
         title = ttk.Label(header_frame,
                          text="🖥️  Ubuntu Server Provisioning",
                          style='Title.TLabel')
         title.pack()
 
-        subtitle = tk.Label(header_frame,
+        subtitle = ttk.Label(header_frame,
                            text="Configure and deploy your server with one click",
-                           bg=self.colors['bg'],
-                           fg=self.colors['text_gray'],
-                           font=('SF Pro Text', 11))
-        subtitle.pack(pady=(5, 0))
+                           style='Subtitle.TLabel')
+        subtitle.pack(pady=(self.spacing['sm'], 0))
 
-        # Connection Information Card
+        # Divider line
+        divider = tk.Frame(header_frame, bg=self.colors['border'], height=1)
+        divider.pack(fill=tk.X, pady=(self.spacing['md'], 0))
+
+        # Connection Information Card with enhanced styling
         conn_frame = ttk.LabelFrame(scrollable_frame,
-                                    text="  Connection Information  ",
-                                    padding="20",
+                                    text="  📡 Connection Information  ",
+                                    padding=str(self.spacing['lg']),
                                     style='Card.TLabelframe')
-        conn_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        conn_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, self.spacing['md']))
 
         # Server IP
         ttk.Label(conn_frame, text="🖥️  Server IP Address:", style='Label.TLabel').grid(
-            row=0, column=0, sticky=tk.W, pady=8)
+            row=0, column=0, sticky=tk.W, pady=self.spacing['sm'])
         ip_entry = ttk.Entry(conn_frame, textvariable=self.target_ip, width=45, font=('SF Mono', 11))
-        ip_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0))
+        ip_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(self.spacing['md'], 0))
 
         # SSH Username
         ttk.Label(conn_frame, text="👤 SSH Username:", style='Label.TLabel').grid(
-            row=1, column=0, sticky=tk.W, pady=8)
+            row=1, column=0, sticky=tk.W, pady=self.spacing['sm'])
         user_entry = ttk.Entry(conn_frame, textvariable=self.target_user, width=45, font=('SF Mono', 11))
-        user_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0))
+        user_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(self.spacing['md'], 0))
 
         # SSH Key Path
         ttk.Label(conn_frame, text="🔑 SSH Private Key:", style='Label.TLabel').grid(
-            row=2, column=0, sticky=tk.W, pady=8)
+            row=2, column=0, sticky=tk.W, pady=self.spacing['sm'])
         key_entry = ttk.Entry(conn_frame, textvariable=self.ssh_key_path, width=45, font=('SF Mono', 11))
-        key_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(10, 0))
+        key_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(self.spacing['md'], 0))
 
         conn_frame.columnconfigure(1, weight=1)
 
-        # Core Features Card
+        # Core Features Card with enhanced styling
         core_frame = ttk.LabelFrame(scrollable_frame,
-                                    text="  Core Features  ",
-                                    padding="20",
+                                    text="  ⚡ Core Features  ",
+                                    padding=str(self.spacing['lg']),
                                     style='Card.TLabelframe')
-        core_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        core_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, self.spacing['md']))
 
         ttk.Checkbutton(core_frame, text="🛡️  Fail2ban Intrusion Prevention",
-                       variable=self.features['fail2ban']).grid(row=0, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['fail2ban']).grid(row=0, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="🐳 Docker & Docker Compose",
-                       variable=self.features['docker']).grid(row=1, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['docker']).grid(row=1, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="🌐 LEMP Stack (Nginx, MySQL, PHP)",
-                       variable=self.features['lemp']).grid(row=2, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['lemp']).grid(row=2, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="💾 Swap Memory Configuration",
-                       variable=self.features['swap']).grid(row=3, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['swap']).grid(row=3, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="⏰ Automated Cron Jobs",
-                       variable=self.features['cron']).grid(row=4, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['cron']).grid(row=4, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="⚙️  Development Tools (Neovim, Node.js, Claude Code)",
-                       variable=self.features['devtools']).grid(row=5, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['devtools']).grid(row=5, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="📝 WordPress CMS",
-                       variable=self.features['wordpress']).grid(row=6, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['wordpress']).grid(row=6, column=0, sticky=tk.W, pady=self.spacing['xs'])
         ttk.Checkbutton(core_frame, text="🔒 Certbot SSL/TLS Certificates",
-                       variable=self.features['certbot']).grid(row=7, column=0, sticky=tk.W, pady=6)
+                       variable=self.features['certbot']).grid(row=7, column=0, sticky=tk.W, pady=self.spacing['xs'])
 
-        # Security Clusters Card
+        # Security Clusters Card with enhanced styling
         security_frame = ttk.LabelFrame(scrollable_frame,
-                                       text="  Security Clusters  ",
-                                       padding="20",
+                                       text="  🔒 Security Clusters  ",
+                                       padding=str(self.spacing['lg']),
                                        style='Card.TLabelframe')
-        security_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        security_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, self.spacing['md']))
 
         # System Hardening
         sh_check = ttk.Checkbutton(security_frame, text="🔐 System Hardening",
@@ -298,60 +345,72 @@ class ProvisioningGUI:
                             style='Subtitle.TLabel')
         ap_label.grid(row=7, column=0, sticky=tk.W, padx=0, pady=(0, 6))
 
-        # Action Buttons
+        # Action Buttons with enhanced styling
         button_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
-        button_frame.grid(row=4, column=0, columnspan=2, pady=25)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(self.spacing['xl'], self.spacing['lg']))
 
-        # Primary launch button with modern styling
+        # Primary launch button with gradient-like effect
         launch_btn = tk.Button(button_frame,
                               text="🚀  Launch Provisioning",
                               command=self.launch_provisioning,
                               bg=self.colors['success'],
                               fg='white',
-                              font=('SF Pro Text', 13, 'bold'),
-                              padx=30,
-                              pady=12,
+                              font=('SF Pro Text', 14, 'bold'),
+                              padx=self.spacing['xl'],
+                              pady=self.spacing['md'],
                               relief='flat',
                               cursor='hand2',
-                              activebackground=self.colors['info'],
+                              borderwidth=0,
+                              highlightthickness=0,
+                              activebackground=self.colors['success_hover'],
                               activeforeground='white')
-        launch_btn.pack(side=tk.LEFT, padx=8)
+        launch_btn.pack(side=tk.LEFT, padx=self.spacing['sm'])
 
-        # Bind hover effects for launch button
-        launch_btn.bind('<Enter>', lambda e: launch_btn.config(bg=self.colors['info']))
-        launch_btn.bind('<Leave>', lambda e: launch_btn.config(bg=self.colors['success']))
+        # Secondary exit button
+        exit_btn = tk.Button(button_frame,
+                            text="✕  Exit",
+                            command=self.root.quit,
+                            bg=self.colors['card_bg'],
+                            fg=self.colors['text_gray'],
+                            font=('SF Pro Text', 12),
+                            padx=self.spacing['lg'],
+                            pady=self.spacing['sm'],
+                            relief='solid',
+                            borderwidth=1,
+                            cursor='hand2',
+                            highlightthickness=0,
+                            activebackground=self.colors['card_hover'],
+                            activeforeground=self.colors['fg'])
+        exit_btn.pack(side=tk.LEFT, padx=self.spacing['sm'])
 
-        # Cancel button with subtle styling
-        cancel_btn = tk.Button(button_frame,
-                              text="✕  Cancel",
-                              command=self.root.quit,
-                              bg=self.colors['card_bg'],
-                              fg=self.colors['text_gray'],
-                              font=('SF Pro Text', 12),
-                              padx=25,
-                              pady=12,
-                              relief='flat',
-                              cursor='hand2',
-                              activebackground=self.colors['border'],
-                              activeforeground=self.colors['fg'],
-                              bd=1,
-                              highlightthickness=1,
-                              highlightbackground=self.colors['border'])
-        cancel_btn.pack(side=tk.LEFT, padx=8)
+        # Bind hover effects with smooth transitions
+        def on_launch_enter(e):
+            launch_btn.config(bg=self.colors['success_hover'])
+        def on_launch_leave(e):
+            launch_btn.config(bg=self.colors['success'])
+        def on_exit_enter(e):
+            exit_btn.config(bg=self.colors['card_hover'], fg=self.colors['fg'])
+        def on_exit_leave(e):
+            exit_btn.config(bg=self.colors['card_bg'], fg=self.colors['text_gray'])
 
-        # Bind hover effects for cancel button
-        cancel_btn.bind('<Enter>', lambda e: cancel_btn.config(bg=self.colors['border']))
-        cancel_btn.bind('<Leave>', lambda e: cancel_btn.config(bg=self.colors['card_bg']))
+        launch_btn.bind('<Enter>', on_launch_enter)
+        launch_btn.bind('<Leave>', on_launch_leave)
+        exit_btn.bind('<Enter>', on_exit_enter)
+        exit_btn.bind('<Leave>', on_exit_leave)
 
-        # Cache indicator footer
+        # Footer with enhanced styling
         footer_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
-        footer_frame.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+        footer_frame.grid(row=5, column=0, columnspan=2, pady=(self.spacing['lg'], 0))
+
+        # Divider above footer
+        footer_divider = tk.Frame(footer_frame, bg=self.colors['border'], height=1)
+        footer_divider.pack(fill=tk.X, pady=(0, self.spacing['md']))
 
         cache_label = tk.Label(footer_frame,
-                              text="💾 Settings are automatically saved",
+                              text="💾  Settings are automatically saved and restored",
                               bg=self.colors['bg'],
-                              fg=self.colors['text_gray'],
-                              font=('SF Pro Text', 10, 'italic'))
+                              fg=self.colors['text_dim'],
+                              font=('SF Pro Text', 10))
         cache_label.pack()
 
         # Pack canvas and scrollbar
