@@ -22,19 +22,19 @@ class ProvisioningGUI:
         # Cache file location
         self.cache_file = Path(__file__).parent / '.gui_config_cache.json'
 
-        # Modern color scheme
+        # Modern dark mode color scheme
         self.colors = {
-            'bg': '#f5f7fa',
-            'fg': '#2c3e50',
-            'primary': '#3498db',
-            'success': '#27ae60',
-            'danger': '#e74c3c',
-            'warning': '#f39c12',
-            'info': '#16a085',
-            'card_bg': '#ffffff',
-            'border': '#e1e8ed',
-            'text_gray': '#7f8c8d',
-            'hover': '#2980b9'
+            'bg': '#1a1d23',           # Dark background
+            'fg': '#e8eaed',           # Light text
+            'primary': '#5dade2',      # Bright blue
+            'success': '#2ecc71',      # Bright green
+            'danger': '#e74c3c',       # Red
+            'warning': '#f39c12',      # Orange
+            'info': '#1abc9c',         # Teal
+            'card_bg': '#252930',      # Dark card background
+            'border': '#3a3f4b',       # Dark border
+            'text_gray': '#a0a6b1',    # Light gray text
+            'hover': '#3498db'         # Hover blue
         }
 
         # Set root background
@@ -151,7 +151,8 @@ class ProvisioningGUI:
 
         # Configure entries
         style.configure('TEntry',
-                       fieldbackground='white',
+                       fieldbackground='#2a2e38',
+                       foreground='#e8eaed',
                        font=('SF Mono', 11))
 
         # Configure primary button
@@ -524,32 +525,32 @@ class ProvisioningGUI:
         subtitle_label.pack(pady=(5, 30))
 
         # Info frame
-        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame = tk.Frame(dialog, bg='#1e2329', padx=20, pady=15)
         info_frame.pack(fill=tk.X, padx=30, pady=(0, 20))
 
         tk.Label(info_frame,
                 text="Next Steps:",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#e8eaed',
                 font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
 
         tk.Label(info_frame,
                 text=f"• SSH into your server: ssh {self.target_user.get()}@{self.target_ip.get()}",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Mono', 10)).pack(anchor=tk.W, pady=2)
 
         tk.Label(info_frame,
                 text="• Check installed services and verify everything works",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
 
         # Close button
         close_btn = tk.Button(dialog,
                              text="✓  Done",
                              command=dialog.destroy,
-                             bg='white',
+                             bg='#1e2329',
                              fg=self.colors['success'],
                              font=('SF Pro Text', 12, 'bold'),
                              padx=40,
@@ -590,44 +591,44 @@ class ProvisioningGUI:
         subtitle_label.pack(pady=(5, 30))
 
         # Troubleshooting frame
-        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame = tk.Frame(dialog, bg='#1e2329', padx=20, pady=15)
         info_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 20))
 
         tk.Label(info_frame,
                 text="Troubleshooting:",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#e8eaed',
                 font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
 
         tk.Label(info_frame,
                 text="• Check the terminal output above for error messages",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
 
         tk.Label(info_frame,
                 text=f"• Verify SSH connection: ssh {self.target_user.get()}@{self.target_ip.get()}",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Mono', 9)).pack(anchor=tk.W, pady=2)
 
         tk.Label(info_frame,
                 text="• Check your server's connectivity and credentials",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
 
         tk.Label(info_frame,
                 text="• Try running with verbose output: ansible-playbook playbook.yml -vv",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#a0a6b1',
                 font=('SF Mono', 9)).pack(anchor=tk.W, pady=2)
 
         # Close button
         close_btn = tk.Button(dialog,
                              text="✕  Close",
                              command=dialog.destroy,
-                             bg='white',
+                             bg='#1e2329',
                              fg=self.colors['danger'],
                              font=('SF Pro Text', 12, 'bold'),
                              padx=40,
@@ -668,17 +669,17 @@ class ProvisioningGUI:
         subtitle_label.pack(pady=(5, 30))
 
         # Error details frame
-        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame = tk.Frame(dialog, bg='#1e2329', padx=20, pady=15)
         info_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 20))
 
         tk.Label(info_frame,
                 text="Error Details:",
-                bg='white',
-                fg=self.colors['fg'],
+                bg='#1e2329',
+                fg='#e8eaed',
                 font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
 
         error_text = tk.Text(info_frame,
-                            bg='#f5f5f5',
+                            bg='#2a2e38',
                             fg=self.colors['danger'],
                             font=('SF Mono', 9),
                             height=6,
@@ -694,7 +695,7 @@ class ProvisioningGUI:
         close_btn = tk.Button(dialog,
                              text="✕  Close",
                              command=dialog.destroy,
-                             bg='white',
+                             bg='#1e2329',
                              fg=self.colors['warning'],
                              font=('SF Pro Text', 12, 'bold'),
                              padx=40,
