@@ -492,20 +492,23 @@ class ProvisioningGUI:
         # Enable trackpad/mousewheel scrolling (macOS and other platforms)
         def on_mousewheel(event):
             """Handle mousewheel and trackpad scrolling across platforms"""
-            # macOS trackpad provides delta values in event.delta
-            # Negative delta = scroll down, positive = scroll up
-            if event.delta:
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            # Linux uses event.num (Button-4 = up, Button-5 = down)
-            elif event.num == 4:
+            # macOS uses event.delta directly (positive = up, negative = down)
+            # Values are typically small (1, -1) for trackpad gestures
+            canvas.yview_scroll(int(-1 * event.delta), "units")
+
+        def on_linux_scroll(event):
+            """Handle Linux mousewheel scrolling"""
+            if event.num == 4:
                 canvas.yview_scroll(-1, "units")
             elif event.num == 5:
                 canvas.yview_scroll(1, "units")
 
         # Bind mousewheel events for different platforms
-        canvas.bind_all("<MouseWheel>", on_mousewheel)  # Windows and macOS
-        canvas.bind_all("<Button-4>", on_mousewheel)    # Linux scroll up
-        canvas.bind_all("<Button-5>", on_mousewheel)    # Linux scroll down
+        # macOS and Windows
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        # Linux
+        canvas.bind_all("<Button-4>", on_linux_scroll)
+        canvas.bind_all("<Button-5>", on_linux_scroll)
 
     def toggle_reboot_config(self):
         """Enable/disable reboot hour selection based on checkbox state"""
