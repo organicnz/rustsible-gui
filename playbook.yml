@@ -6,6 +6,12 @@
 - hosts: all
   become: true
   gather_facts: true
+
+  vars_prompt:
+    - name: ip_address
+      prompt: "Enter the server IP address"
+      private: false
+
   vars_files:
     - vars/default.yml
   

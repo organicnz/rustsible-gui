@@ -1,6 +1,8 @@
 ---
 # Server Configuration
-ip_address: "152.53.136.84"
+# Note: ip_address will be prompted interactively at runtime
+# (override with -e "ip_address=x.x.x.x" to skip prompt)
+# ip_address: will be prompted
 added_user: organic
 user_password: "{{ lookup('file', lookup('env','HOME') + '/.ssh/password') }}"
 copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa_gitlab.pub') }}"

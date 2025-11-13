@@ -91,15 +91,22 @@ The playbook uses 10 roles executed in specific order:
 
 ### Running the Playbook
 
-Initial setup (as root):
+**Interactive Mode** (prompts for IP address):
 ```bash
+# Initial setup (as root) - will prompt for server IP
 ansible-playbook playbook.yml -l webservers -i inventory.ini -u root -k
-```
 
-Subsequent runs (as non-root user):
-```bash
+# Subsequent runs (as non-root user) - will prompt for server IP
 ansible-playbook playbook.yml -l webservers -i inventory.ini -u organic --ask-become-pass
 ```
+
+**Non-Interactive Mode** (skip IP prompt by providing via command line):
+```bash
+# Provide IP address via -e flag to skip prompt
+ansible-playbook playbook.yml -l webservers -i inventory.ini -u organic --ask-become-pass -e "ip_address=152.53.136.84"
+```
+
+**Note**: The playbook will **always** prompt for the server IP address at runtime unless you provide it via the `-e` flag. The IP address is used for fail2ban whitelist configuration.
 
 ### Tag-based Execution
 

@@ -73,12 +73,17 @@ A comprehensive, modular Ansible playbook for Ubuntu server configuration with s
    # Dry run first (check mode)
    ansible-playbook playbook.yml --check
 
-   # Actual run
+   # Actual run (will prompt for server IP address)
    ansible-playbook playbook.yml
 
-   # With vault password
+   # With vault password (will prompt for IP address)
    ansible-playbook playbook.yml --ask-vault-pass
+
+   # Non-interactive mode (skip IP prompt)
+   ansible-playbook playbook.yml -e "ip_address=152.53.136.84"
    ```
+
+   **Note**: The playbook will **always** interactively prompt for the server IP address unless you provide it via the `-e` flag.
 
 ## Configuration
 
@@ -145,8 +150,15 @@ nodejs_version: "22"
 ## Usage Examples
 
 ### Run Complete Setup
+
+**Interactive mode** (will prompt for server IP):
 ```bash
 ansible-playbook playbook.yml
+```
+
+**Non-interactive mode** (provide IP via command line):
+```bash
+ansible-playbook playbook.yml -e "ip_address=152.53.136.84"
 ```
 
 ### Run Specific Roles Only
