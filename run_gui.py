@@ -478,17 +478,230 @@ class ProvisioningGUI:
 
             process.wait()
 
+            terminal_window.destroy()
+
             if process.returncode == 0:
-                messagebox.showinfo("Success", "Provisioning completed successfully!")
+                self.show_success_dialog()
             else:
-                messagebox.showerror("Error", f"Provisioning failed with exit code {process.returncode}")
+                self.show_error_dialog(process.returncode)
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to run playbook: {str(e)}")
+            terminal_window.destroy()
+            self.show_exception_dialog(str(e))
 
         finally:
-            terminal_window.destroy()
             self.root.deiconify()
+
+    def show_success_dialog(self):
+        """Show beautiful success dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("✅ Success")
+        dialog.geometry("500x400")
+        dialog.configure(bg=self.colors['success'])
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Success icon and message
+        icon_label = tk.Label(dialog,
+                             text="✅",
+                             bg=self.colors['success'],
+                             fg='white',
+                             font=('SF Pro Display', 72))
+        icon_label.pack(pady=(40, 20))
+
+        title_label = tk.Label(dialog,
+                              text="Provisioning Completed!",
+                              bg=self.colors['success'],
+                              fg='white',
+                              font=('SF Pro Display', 20, 'bold'))
+        title_label.pack()
+
+        subtitle_label = tk.Label(dialog,
+                                 text="Your server is ready to use",
+                                 bg=self.colors['success'],
+                                 fg='white',
+                                 font=('SF Pro Text', 12))
+        subtitle_label.pack(pady=(5, 30))
+
+        # Info frame
+        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame.pack(fill=tk.X, padx=30, pady=(0, 20))
+
+        tk.Label(info_frame,
+                text="Next Steps:",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+
+        tk.Label(info_frame,
+                text=f"• SSH into your server: ssh {self.target_user.get()}@{self.target_ip.get()}",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Mono', 10)).pack(anchor=tk.W, pady=2)
+
+        tk.Label(info_frame,
+                text="• Check installed services and verify everything works",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
+
+        # Close button
+        close_btn = tk.Button(dialog,
+                             text="✓  Done",
+                             command=dialog.destroy,
+                             bg='white',
+                             fg=self.colors['success'],
+                             font=('SF Pro Text', 12, 'bold'),
+                             padx=40,
+                             pady=10,
+                             relief='flat',
+                             cursor='hand2')
+        close_btn.pack(pady=(0, 30))
+
+    def show_error_dialog(self, exit_code):
+        """Show beautiful error dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("❌ Error")
+        dialog.geometry("550x450")
+        dialog.configure(bg=self.colors['danger'])
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Error icon and message
+        icon_label = tk.Label(dialog,
+                             text="❌",
+                             bg=self.colors['danger'],
+                             fg='white',
+                             font=('SF Pro Display', 72))
+        icon_label.pack(pady=(40, 20))
+
+        title_label = tk.Label(dialog,
+                              text="Provisioning Failed",
+                              bg=self.colors['danger'],
+                              fg='white',
+                              font=('SF Pro Display', 20, 'bold'))
+        title_label.pack()
+
+        subtitle_label = tk.Label(dialog,
+                                 text=f"Exit code: {exit_code}",
+                                 bg=self.colors['danger'],
+                                 fg='white',
+                                 font=('SF Pro Text', 12))
+        subtitle_label.pack(pady=(5, 30))
+
+        # Troubleshooting frame
+        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 20))
+
+        tk.Label(info_frame,
+                text="Troubleshooting:",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+
+        tk.Label(info_frame,
+                text="• Check the terminal output above for error messages",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
+
+        tk.Label(info_frame,
+                text=f"• Verify SSH connection: ssh {self.target_user.get()}@{self.target_ip.get()}",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Mono', 9)).pack(anchor=tk.W, pady=2)
+
+        tk.Label(info_frame,
+                text="• Check your server's connectivity and credentials",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 10)).pack(anchor=tk.W, pady=2)
+
+        tk.Label(info_frame,
+                text="• Try running with verbose output: ansible-playbook playbook.yml -vv",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Mono', 9)).pack(anchor=tk.W, pady=2)
+
+        # Close button
+        close_btn = tk.Button(dialog,
+                             text="✕  Close",
+                             command=dialog.destroy,
+                             bg='white',
+                             fg=self.colors['danger'],
+                             font=('SF Pro Text', 12, 'bold'),
+                             padx=40,
+                             pady=10,
+                             relief='flat',
+                             cursor='hand2')
+        close_btn.pack(pady=(0, 30))
+
+    def show_exception_dialog(self, error_msg):
+        """Show beautiful exception dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("⚠️ Exception")
+        dialog.geometry("550x400")
+        dialog.configure(bg=self.colors['warning'])
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Warning icon and message
+        icon_label = tk.Label(dialog,
+                             text="⚠️",
+                             bg=self.colors['warning'],
+                             fg='white',
+                             font=('SF Pro Display', 72))
+        icon_label.pack(pady=(40, 20))
+
+        title_label = tk.Label(dialog,
+                              text="Unexpected Error",
+                              bg=self.colors['warning'],
+                              fg='white',
+                              font=('SF Pro Display', 20, 'bold'))
+        title_label.pack()
+
+        subtitle_label = tk.Label(dialog,
+                                 text="Failed to run playbook",
+                                 bg=self.colors['warning'],
+                                 fg='white',
+                                 font=('SF Pro Text', 12))
+        subtitle_label.pack(pady=(5, 30))
+
+        # Error details frame
+        info_frame = tk.Frame(dialog, bg='white', padx=20, pady=15)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 20))
+
+        tk.Label(info_frame,
+                text="Error Details:",
+                bg='white',
+                fg=self.colors['fg'],
+                font=('SF Pro Text', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+
+        error_text = tk.Text(info_frame,
+                            bg='#f5f5f5',
+                            fg=self.colors['danger'],
+                            font=('SF Mono', 9),
+                            height=6,
+                            wrap=tk.WORD,
+                            relief='flat',
+                            padx=10,
+                            pady=10)
+        error_text.insert('1.0', error_msg)
+        error_text.config(state='disabled')
+        error_text.pack(fill=tk.BOTH, expand=True)
+
+        # Close button
+        close_btn = tk.Button(dialog,
+                             text="✕  Close",
+                             command=dialog.destroy,
+                             bg='white',
+                             fg=self.colors['warning'],
+                             font=('SF Pro Text', 12, 'bold'),
+                             padx=40,
+                             pady=10,
+                             relief='flat',
+                             cursor='hand2')
+        close_btn.pack(pady=(0, 30))
 
 def main():
     root = tk.Tk()

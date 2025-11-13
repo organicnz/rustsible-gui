@@ -236,17 +236,81 @@ def main():
         ])
 
     print("\n" + "═" * 65)
-    print("   STARTING ANSIBLE PLAYBOOK")
-    print("═" * 65 + "\n")
+    print("   🚀 STARTING ANSIBLE PLAYBOOK")
+    print("═" * 65)
+    print()
+    print("\033[1;36m┌─────────────────────────────────────────────────────────┐\033[0m")
+    print("\033[1;36m│  💡 TIP: Watch for green [OK] and yellow [CHANGED]     │\033[0m")
+    print("\033[1;36m│       Red [FAILED] means something went wrong           │\033[0m")
+    print("\033[1;36m└─────────────────────────────────────────────────────────┘\033[0m")
+    print()
 
     # Run ansible-playbook
+    import time
+    start_time = time.time()
+
     try:
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, check=True)
+
+        # Success message
+        elapsed = time.time() - start_time
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+
+        print("\n" + "═" * 65)
+        print("\033[1;32m   ✅ PROVISIONING COMPLETED SUCCESSFULLY!\033[0m")
+        print("═" * 65)
+        print()
+        print(f"  ⏱️  Time elapsed: \033[1;36m{minutes}m {seconds}s\033[0m")
+        print(f"  🎯 Server: \033[1;36m{connection_answers['target_ip']}\033[0m")
+        print(f"  📦 Features installed: \033[1;36m{len(selected_features)}\033[0m")
+        print()
+        print("\033[1;33m  Next Steps:\033[0m")
+        print("  • SSH into your server: \033[1;90mssh {}@{}\033[0m".format(
+            connection_answers['target_user'],
+            connection_answers['target_ip']))
+
+        if 'docker' in selected_features:
+            print("  • Check Docker: \033[1;90mdocker --version\033[0m")
+        if 'fail2ban' in selected_features:
+            print("  • Check Fail2ban: \033[1;90msudo fail2ban-client status\033[0m")
+        if 'lemp' in selected_features:
+            print("  • Visit your server in browser: \033[1;90mhttp://{}\033[0m".format(
+                connection_answers['target_ip']))
+
+        print()
+        print("\033[1;32m  🎉 Your server is ready to use!\033[0m")
+        print()
+
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Playbook execution failed with exit code {e.returncode}")
+        elapsed = time.time() - start_time
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+
+        print("\n" + "═" * 65)
+        print("\033[1;31m   ❌ PROVISIONING FAILED\033[0m")
+        print("═" * 65)
+        print()
+        print(f"  ⏱️  Time elapsed: \033[1;36m{minutes}m {seconds}s\033[0m")
+        print(f"  💥 Exit code: \033[1;31m{e.returncode}\033[0m")
+        print()
+        print("\033[1;33m  Troubleshooting:\033[0m")
+        print("  • Check the error messages above")
+        print("  • Verify SSH connection: \033[1;90mssh {}@{}\033[0m".format(
+            connection_answers['target_user'],
+            connection_answers['target_ip']))
+        print("  • Try again with verbose output: \033[1;90mansible-playbook playbook.yml -vv\033[0m")
+        print()
         sys.exit(e.returncode)
+
     except KeyboardInterrupt:
-        print("\n\n⚠️  Playbook interrupted by user")
+        print("\n\n" + "═" * 65)
+        print("\033[1;33m   ⚠️  PLAYBOOK INTERRUPTED BY USER\033[0m")
+        print("═" * 65)
+        print()
+        print("  The provisioning was stopped. Your server may be in an incomplete state.")
+        print("  You can re-run the playbook to continue or complete the setup.")
+        print()
         sys.exit(130)
 
 if __name__ == '__main__':
