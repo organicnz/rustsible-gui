@@ -109,6 +109,8 @@
         install_dev_tools: "{{ prompt_install_dev_tools | lower in ['yes', 'y', 'true'] }}"
         install_wordpress: "{{ prompt_install_wordpress | lower in ['yes', 'y', 'true'] }}"
         install_certbot: "{{ prompt_install_certbot | lower in ['yes', 'y', 'true'] }}"
+        enable_periodic_reboot: "{{ prompt_enable_periodic_reboot | lower in ['yes', 'y', 'true'] }}"
+        cron_reboot_hour: "{{ prompt_reboot_hour | default('3') }}"
 
     - name: Test SSH connection to target server
       wait_for:

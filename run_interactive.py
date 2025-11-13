@@ -46,11 +46,14 @@ def main():
     print("  \033[1;33m1.\033[0m 🖥️  Server IP address")
     print("  \033[1;33m2.\033[0m 👤 SSH username")
     print("  \033[1;33m3.\033[0m 🔑 SSH private key path")
-    print("  \033[1;33m4.\033[0m 📦 Select features to install (12 options available)")
+    print("  \033[1;33m4.\033[0m 📦 Select features to install (13 options available)")
     print()
     print("     \033[1;90mCore Features:\033[0m")
     print("       • Fail2ban, Docker, LEMP, Swap, Cron Jobs")
     print("       • Development Tools, WordPress, Certbot")
+    print()
+    print("     \033[1;90mMaintenance:\033[0m")
+    print("       • 🔄 Periodic System Reboot (optional)")
     print()
     print("     \033[1;90mSecurity Clusters:\033[0m")
     print("       • 🔐 System Hardening (4 features)")
@@ -91,6 +94,8 @@ def main():
                              ('📝 WordPress CMS', 'wordpress'),
                              ('🔒 Certbot SSL/TLS Certificates', 'certbot'),
                              ('─' * 40, 'separator1'),  # Visual separator
+                             ('🔄 Periodic System Reboot (⚠️  Automatically reboots server)', 'periodic_reboot'),
+                             ('─' * 40, 'separator2'),  # Visual separator
                              ('🔐 System Hardening (Kernel, AppArmor, Auto-updates)', 'system_hardening'),
                              ('📊 Monitoring & Detection (Lynis, AIDE, rkhunter, Logs)', 'monitoring_detection'),
                              ('🌐 Network Security (IPv6 disable, IDS)', 'network_security'),
@@ -105,15 +110,38 @@ def main():
         print("\n❌ Setup cancelled")
         sys.exit(1)
 
+    # Extract and clean features (remove separators)
+    selected_features = [f for f in answers['features'] if not f.startswith('separator')]
+
+    # Ask for reboot hour if periodic reboot is selected
+    reboot_hour = "3"  # default
+    if 'periodic_reboot' in selected_features:
+        print()
+        reboot_question = [
+            inquirer.List('reboot_hour',
+                         message="⏰ Reboot Schedule (select hour)",
+                         choices=[
+                             ('Daily at 1:00 AM', '1'),
+                             ('Daily at 2:00 AM', '2'),
+                             ('Daily at 3:00 AM', '3'),
+                             ('Daily at 4:00 AM', '4'),
+                             ('Daily at 5:00 AM', '5'),
+                             ('Every 6 hours', '*/6'),
+                             ('Every 12 hours (twice daily)', '*/12'),
+                             ('Every 24 hours (once daily)', '*/24'),
+                         ],
+                         default='3'),
+        ]
+        reboot_answer = inquirer.prompt(reboot_question)
+        if reboot_answer:
+            reboot_hour = reboot_answer['reboot_hour']
+
     # Extract connection info
     connection_answers = {
         'target_ip': answers['target_ip'],
         'target_user': answers['target_user'],
         'ssh_key_path': answers['ssh_key_path']
     }
-
-    # Extract and clean features (remove separators)
-    selected_features = [f for f in answers['features'] if not f.startswith('separator')]
 
     # Display selection summary
     print("\n" + "═" * 65)
@@ -134,6 +162,7 @@ def main():
         'devtools': 'Development Tools',
         'wordpress': 'WordPress CMS',
         'certbot': 'Certbot SSL/TLS',
+        'periodic_reboot': 'Periodic System Reboot',
         'system_hardening': 'System Hardening',
         'monitoring_detection': 'Monitoring & Detection',
         'network_security': 'Network Security',
@@ -141,11 +170,27 @@ def main():
     }
 
     for feature in ['fail2ban', 'docker', 'lemp', 'swap', 'cron', 'devtools', 'wordpress', 'certbot',
-                    'system_hardening', 'monitoring_detection', 'network_security', 'advanced_protection']:
+                    'periodic_reboot', 'system_hardening', 'monitoring_detection', 'network_security', 'advanced_protection']:
         if feature in selected_features:
             print(f"  \033[1;32m✓\033[0m {feature_names[feature]}")
         else:
             print(f"  \033[1;90m✗\033[0m {feature_names[feature]}")
+
+    # Show periodic reboot schedule if selected
+    if 'periodic_reboot' in selected_features:
+        schedule_desc = {
+            "1": "Daily at 1:00 AM",
+            "2": "Daily at 2:00 AM",
+            "3": "Daily at 3:00 AM",
+            "4": "Daily at 4:00 AM",
+            "5": "Daily at 5:00 AM",
+            "*/6": "Every 6 hours",
+            "*/12": "Every 12 hours (twice daily)",
+            "*/24": "Every 24 hours (once daily)",
+        }
+        print("\n  \033[1;33m▸ Periodic Reboot Schedule:\033[0m")
+        print(f"    • {schedule_desc.get(reboot_hour, f'Hour {reboot_hour}')}")
+        print("    • \033[1;31m⚠️  Warning: Server will reboot automatically\033[0m")
 
     # Show security cluster breakdowns if selected
     if 'system_hardening' in selected_features:
@@ -202,6 +247,8 @@ def main():
         '-e', f"prompt_install_dev_tools={'yes' if 'devtools' in selected_features else 'no'}",
         '-e', f"prompt_install_wordpress={'yes' if 'wordpress' in selected_features else 'no'}",
         '-e', f"prompt_install_certbot={'yes' if 'certbot' in selected_features else 'no'}",
+        '-e', f"prompt_enable_periodic_reboot={'yes' if 'periodic_reboot' in selected_features else 'no'}",
+        '-e', f"prompt_reboot_hour={reboot_hour}",
     ]
 
     # Add security cluster features if selected

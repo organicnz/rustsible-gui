@@ -79,7 +79,11 @@ class ProvisioningGUI:
             'monitoring_detection': tk.BooleanVar(value=True),
             'network_security': tk.BooleanVar(value=False),
             'advanced_protection': tk.BooleanVar(value=False),
+            'periodic_reboot': tk.BooleanVar(value=False),
         }
+
+        # Periodic reboot configuration
+        self.reboot_hour = tk.StringVar(value="3")
 
         self.setup_styles()
         self.create_widgets()
@@ -108,6 +112,10 @@ class ProvisioningGUI:
                     if feature in self.features:
                         self.features[feature].set(value)
 
+            # Load reboot hour configuration
+            if 'reboot_hour' in cache:
+                self.reboot_hour.set(cache['reboot_hour'])
+
         except Exception as e:
             # Silently ignore cache errors
             pass
@@ -122,7 +130,8 @@ class ProvisioningGUI:
                 'features': {
                     name: var.get()
                     for name, var in self.features.items()
-                }
+                },
+                'reboot_hour': self.reboot_hour.get()
             }
 
             with open(self.cache_file, 'w') as f:
@@ -345,9 +354,59 @@ class ProvisioningGUI:
                             style='Subtitle.TLabel')
         ap_label.grid(row=7, column=0, sticky=tk.W, padx=0, pady=(0, 6))
 
+        # Maintenance Settings Card with enhanced styling
+        maint_frame = ttk.LabelFrame(scrollable_frame,
+                                     text="  🔧 Maintenance Settings  ",
+                                     padding=str(self.spacing['lg']),
+                                     style='Card.TLabelframe')
+        maint_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, self.spacing['md']))
+
+        # Periodic Reboot checkbox
+        reboot_check = ttk.Checkbutton(maint_frame, text="🔄 Periodic System Reboot",
+                                       variable=self.features['periodic_reboot'],
+                                       command=self.toggle_reboot_config)
+        reboot_check.grid(row=0, column=0, sticky=tk.W, pady=(0, self.spacing['sm']))
+
+        # Warning label
+        warning_label = ttk.Label(maint_frame,
+                                 text="      ⚠️  Warning: Automatically reboots server at scheduled time",
+                                 style='Subtitle.TLabel')
+        warning_label.grid(row=1, column=0, sticky=tk.W, pady=(0, self.spacing['sm']))
+
+        # Reboot hour configuration frame
+        reboot_config_frame = ttk.Frame(maint_frame, style='Card.TLabelframe')
+        reboot_config_frame.grid(row=2, column=0, sticky=tk.W, pady=(self.spacing['sm'], 0))
+
+        ttk.Label(reboot_config_frame, text="      ⏰ Reboot Schedule:", style='Label.TLabel').grid(
+            row=0, column=0, sticky=tk.W, padx=(0, self.spacing['md']))
+
+        # Dropdown for reboot hour
+        self.reboot_hour_combo = ttk.Combobox(reboot_config_frame,
+                                              textvariable=self.reboot_hour,
+                                              values=["1", "2", "3", "4", "5", "*/6", "*/12", "*/24"],
+                                              width=15,
+                                              state='readonly',
+                                              font=('SF Mono', 11))
+        self.reboot_hour_combo.grid(row=0, column=1, sticky=tk.W)
+
+        ttk.Label(reboot_config_frame, text=" hour(s)", style='Label.TLabel').grid(
+            row=0, column=2, sticky=tk.W, padx=(self.spacing['xs'], 0))
+
+        # Schedule description
+        self.reboot_desc_label = ttk.Label(maint_frame,
+                                          text="      • Daily at 3:00 AM",
+                                          style='Subtitle.TLabel')
+        self.reboot_desc_label.grid(row=3, column=0, sticky=tk.W, pady=(self.spacing['xs'], 0))
+
+        # Bind reboot hour change to update description
+        self.reboot_hour.trace_add('write', self.update_reboot_description)
+
+        # Initially disable/enable based on checkbox state
+        self.toggle_reboot_config()
+
         # Action Buttons with enhanced styling
         button_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
-        button_frame.grid(row=4, column=0, columnspan=2, pady=(self.spacing['xl'], self.spacing['lg']))
+        button_frame.grid(row=5, column=0, columnspan=2, pady=(self.spacing['xl'], self.spacing['lg']))
 
         # Primary launch button with gradient-like effect
         launch_btn = tk.Button(button_frame,
@@ -400,7 +459,7 @@ class ProvisioningGUI:
 
         # Footer with enhanced styling
         footer_frame = ttk.Frame(scrollable_frame, style='Main.TFrame')
-        footer_frame.grid(row=5, column=0, columnspan=2, pady=(self.spacing['lg'], 0))
+        footer_frame.grid(row=6, column=0, columnspan=2, pady=(self.spacing['lg'], 0))
 
         # Divider above footer
         footer_divider = tk.Frame(footer_frame, bg=self.colors['border'], height=1)
@@ -419,6 +478,29 @@ class ProvisioningGUI:
 
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(0, weight=1)
+
+    def toggle_reboot_config(self):
+        """Enable/disable reboot hour selection based on checkbox state"""
+        if self.features['periodic_reboot'].get():
+            self.reboot_hour_combo.config(state='readonly')
+        else:
+            self.reboot_hour_combo.config(state='disabled')
+
+    def update_reboot_description(self, *args):
+        """Update the reboot schedule description based on selected hour"""
+        hour = self.reboot_hour.get()
+        descriptions = {
+            "1": "Daily at 1:00 AM",
+            "2": "Daily at 2:00 AM",
+            "3": "Daily at 3:00 AM",
+            "4": "Daily at 4:00 AM",
+            "5": "Daily at 5:00 AM",
+            "*/6": "Every 6 hours",
+            "*/12": "Every 12 hours (twice daily)",
+            "*/24": "Every 24 hours (once daily)",
+        }
+        desc = descriptions.get(hour, f"Custom schedule: hour {hour}")
+        self.reboot_desc_label.config(text=f"      • {desc}")
 
     def launch_provisioning(self):
         # Validate inputs
@@ -441,6 +523,8 @@ class ProvisioningGUI:
             '-e', f"prompt_install_dev_tools={'yes' if self.features['devtools'].get() else 'no'}",
             '-e', f"prompt_install_wordpress={'yes' if self.features['wordpress'].get() else 'no'}",
             '-e', f"prompt_install_certbot={'yes' if self.features['certbot'].get() else 'no'}",
+            '-e', f"prompt_enable_periodic_reboot={'yes' if self.features['periodic_reboot'].get() else 'no'}",
+            '-e', f"prompt_reboot_hour={self.reboot_hour.get()}",
         ]
 
         # Add security clusters
