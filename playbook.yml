@@ -13,62 +13,10 @@
   connection: local
   gather_facts: false
 
-  vars_prompt:
-    # Connection Information
-    - name: target_ip
-      prompt: "Enter the server IP address"
-      private: false
-
-    - name: target_user
-      prompt: "Enter SSH username (default: root)"
-      private: false
-      default: "root"
-
-    - name: ssh_key_path
-      prompt: "Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab)"
-      private: false
-      default: "~/.ssh/id_rsa_gitlab"
-
-    # Optional Features Selection
-    - name: prompt_enable_fail2ban
-      prompt: "\n=== OPTIONAL FEATURES ===\nEnable Fail2ban intrusion prevention? (yes/no)"
-      private: false
-      default: "yes"
-
-    - name: prompt_install_docker
-      prompt: "Install Docker and Docker Compose? (yes/no)"
-      private: false
-      default: "yes"
-
-    - name: prompt_install_lemp
-      prompt: "Install LEMP stack (Nginx, MySQL, PHP)? (yes/no)"
-      private: false
-      default: "no"
-
-    - name: prompt_enable_swap
-      prompt: "Configure swap memory (auto-sized based on RAM)? (yes/no)"
-      private: false
-      default: "yes"
-
-    - name: prompt_enable_cron_jobs
-      prompt: "Enable automated cron jobs for maintenance? (yes/no)"
-      private: false
-      default: "yes"
-
-    - name: prompt_install_dev_tools
-      prompt: "Install development tools (Neovim, Node.js, Claude Code)? (yes/no)"
-      private: false
-      default: "no"
-
-    - name: prompt_install_wordpress
-      prompt: "Install WordPress (requires LEMP stack)? (yes/no)"
-      private: false
-      default: "no"
-
-    - name: prompt_install_certbot
-      prompt: "Install Certbot for SSL/TLS certificates? (yes/no)"
-      private: false
-      default: "no"
+  # NOTE: vars_prompt removed to support GUI/CLI launchers
+  # All variables are now passed via -e flags from run_gui.py or run_interactive.py
+  # Required variables: target_ip, target_user, ssh_key_path
+  # Feature flags: prompt_enable_fail2ban, prompt_install_docker, etc.
 
   tasks:
     - name: Display connection information header
