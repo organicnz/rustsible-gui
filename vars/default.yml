@@ -36,12 +36,20 @@ ufw_allowed_ports:
   - port: 443
     proto: tcp
 
-# Fail2ban Configuration
+# Fail2ban Configuration (Intelligent Intrusion Prevention)
 address: 127.0.0.1 {{ ip_address }}
 fail2ban_ssh_service_name: sshd
-fail2ban_bantime: 86400  # 24 hours
-fail2ban_findtime: 600   # 10 minutes
-fail2ban_maxretry: 3
+fail2ban_bantime: 86400        # 24 hours (86400 seconds)
+fail2ban_findtime: 600         # 10 minutes (600 seconds)
+fail2ban_maxretry: 3           # Maximum 3 failed attempts
+# Fail2ban uses intelligent multi-tier protection:
+# - SSH protection with aggressive detection
+# - Recidive jail: bans repeat offenders for 1 week (3+ bans) or 30 days (5+ bans)
+# - Web server protection: nginx/apache against bots, scripts, proxies
+# - PHP injection protection
+# - Port scanning detection
+# - PAM and sudo authentication monitoring
+# Enable service-specific jails in roles/security/templates/jail.local.j2
 
 # Docker Configuration
 install_docker: true
