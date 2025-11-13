@@ -25,7 +25,7 @@
 # Implements security best practices: key-based auth, no root login, non-standard port.
 
 - name: "SSH Security | Configure SSH daemon for maximum security"
-  ansible.builtin.block:
+  block:
     - name: "SSH Auth | Disable password authentication"
       # Forces SSH key-based authentication only.
       # Prevents brute-force password attacks and credential stuffing.
@@ -81,7 +81,7 @@
 # Only explicitly allowed services can receive incoming connections.
 
 - name: "Firewall | Configure UFW with default-deny policy"
-  ansible.builtin.block:
+  block:
     - name: "Firewall | Allow SSH on port {{ ssh_port }}"
       # Must allow SSH before enabling firewall to prevent lockout.
       # Uses the ssh_port variable to handle non-standard ports.
@@ -148,7 +148,7 @@
 # Includes password policies, file permissions, and kernel parameters.
 
 - name: "System Hardening | Apply OS-level security controls"
-  ansible.builtin.block:
+  block:
     - name: "PAM Security | Enforce strong password policies"
       # Configures PAM (Pluggable Authentication Modules) for password strength.
       # Requirements: 12 char minimum, 3 character difference from old password, 3 retries.
@@ -196,7 +196,7 @@
 # DISABLED BY DEFAULT - Enable only on web servers facing the internet.
 
 - name: "DDOS Protection | Configure HTTP flood protection"
-  ansible.builtin.block:
+  block:
     - name: "Fail2ban | Install HTTP GET-DOS jail configuration"
       # Detects and bans IPs making excessive HTTP requests.
       # Thresholds: 300 requests in 300 seconds (5 minutes) = 10 min ban.

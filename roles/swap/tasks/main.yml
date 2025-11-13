@@ -129,7 +129,7 @@
 # Creates or resizes swap file and configures system parameters.
 
 - name: "Swap Configuration | Complete swap setup with error handling"
-  ansible.builtin.block:
+  block:
     - name: "Swap Disable | Turn off existing swap before modification"
       # Must disable swap before modifying the swap file.
       # Only runs if swap is active AND needs resizing.

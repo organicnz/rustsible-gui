@@ -25,7 +25,7 @@
         - always
 
     - name: Clean Docker repository if conflicts detected
-      ansible.builtin.block:
+      block:
         - name: Remove any existing Docker apt key files
           ansible.builtin.file:
             path: "{{ item }}"

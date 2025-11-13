@@ -28,7 +28,7 @@
     - always
 
 - name: "Docker Installation | Complete Docker setup with error handling"
-  ansible.builtin.block:
+  block:
     # -------------------------------------------------------------------------
     # SECTION 1: Prerequisites and Dependencies
     # -------------------------------------------------------------------------

@@ -186,7 +186,10 @@
 - name: "Package Management | Clean package cache and remove orphaned dependencies"
   # Frees disk space by removing obsolete packages and cached .deb files.
   # Removes dependencies that are no longer needed by any installed package.
-  ansible.builtin.block:
+  tags:
+    - system
+    - packages
+  block:
     - name: "Package Cleanup | Remove cached package files"
       ansible.builtin.apt:
         autoclean: yes
@@ -194,11 +197,6 @@
     - name: "Package Cleanup | Remove orphaned dependencies"
       ansible.builtin.apt:
         autoremove: yes
-  tags:
-    - system
-    - packages
-    - cleanup
-    - maintenance
 
 # -----------------------------------------------------------------------------
 # SECTION 5: Distribution Upgrade Management
@@ -206,7 +204,12 @@
 # Handles Ubuntu version-specific configurations and EOL notices.
 
 - name: "System Upgrade | Check and prepare for distribution upgrades"
-  ansible.builtin.block:
+  tags:
+    - system
+    - upgrade
+    - version-check
+    - eol
+  block:
     - name: "System Info | Display current Ubuntu version"
       ansible.builtin.debug:
         msg: 'This server is running Ubuntu {{ ansible_distribution_version }}'
@@ -228,9 +231,4 @@
       ansible.builtin.apt:
         name: update-manager-core
         state: present
-      when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10'
-  tags:
-    - system
-    - upgrade
-    - version-check
-    - eol 
+      when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '23.10' 
