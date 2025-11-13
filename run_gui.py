@@ -64,6 +64,7 @@ class ProvisioningGUI:
         self.target_ip = tk.StringVar()
         self.target_user = tk.StringVar(value="root")
         self.ssh_key_path = tk.StringVar(value="~/.ssh/id_rsa_gitlab")
+        self.hostname = tk.StringVar()
 
         # Feature checkboxes
         self.features = {
@@ -105,6 +106,8 @@ class ProvisioningGUI:
                 self.target_user.set(cache['target_user'])
             if 'ssh_key_path' in cache:
                 self.ssh_key_path.set(cache['ssh_key_path'])
+            if 'hostname' in cache:
+                self.hostname.set(cache['hostname'])
 
             # Load feature selections
             if 'features' in cache:
@@ -127,6 +130,7 @@ class ProvisioningGUI:
                 'target_ip': self.target_ip.get(),
                 'target_user': self.target_user.get(),
                 'ssh_key_path': self.ssh_key_path.get(),
+                'hostname': self.hostname.get(),
                 'features': {
                     name: var.get()
                     for name, var in self.features.items()
@@ -284,6 +288,12 @@ class ProvisioningGUI:
             row=2, column=0, sticky=tk.W, pady=self.spacing['sm'])
         key_entry = ttk.Entry(conn_frame, textvariable=self.ssh_key_path, width=45, font=('SF Mono', 11))
         key_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(self.spacing['md'], 0))
+
+        # Hostname
+        ttk.Label(conn_frame, text="🏷️  Hostname (optional):", style='Label.TLabel').grid(
+            row=3, column=0, sticky=tk.W, pady=self.spacing['sm'])
+        hostname_entry = ttk.Entry(conn_frame, textvariable=self.hostname, width=45, font=('SF Mono', 11))
+        hostname_entry.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=(self.spacing['md'], 0))
 
         conn_frame.columnconfigure(1, weight=1)
 
@@ -515,6 +525,7 @@ class ProvisioningGUI:
             '-e', f"target_ip={self.target_ip.get()}",
             '-e', f"target_user={self.target_user.get()}",
             '-e', f"ssh_key_path={self.ssh_key_path.get()}",
+            '-e', f"target_hostname={self.hostname.get()}",
             '-e', f"prompt_enable_fail2ban={'yes' if self.features['fail2ban'].get() else 'no'}",
             '-e', f"prompt_install_docker={'yes' if self.features['docker'].get() else 'no'}",
             '-e', f"prompt_install_lemp={'yes' if self.features['lemp'].get() else 'no'}",

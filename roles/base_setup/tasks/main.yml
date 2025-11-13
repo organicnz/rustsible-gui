@@ -59,6 +59,31 @@
     - timezone
     - config
 
+- name: "System Config | Set hostname to {{ server_hostname }}"
+  # Sets the system hostname for identification and network purposes.
+  # Hostname is visible in shell prompts and network connections.
+  ansible.builtin.hostname:
+    name: "{{ server_hostname }}"
+  when: server_hostname is defined and server_hostname != ''
+  tags:
+    - system
+    - hostname
+    - config
+
+- name: "System Config | Update /etc/hosts with new hostname"
+  # Ensures hostname resolves locally to prevent DNS lookup issues.
+  # Critical for many applications that rely on hostname resolution.
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ server_hostname }}"
+    state: present
+  when: server_hostname is defined and server_hostname != ''
+  tags:
+    - system
+    - hostname
+    - config
+
 # -----------------------------------------------------------------------------
 # SECTION 3: User and Access Management
 # -----------------------------------------------------------------------------

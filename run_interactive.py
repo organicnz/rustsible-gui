@@ -46,7 +46,8 @@ def main():
     print("  \033[1;33m1.\033[0m 🖥️  Server IP address")
     print("  \033[1;33m2.\033[0m 👤 SSH username")
     print("  \033[1;33m3.\033[0m 🔑 SSH private key path")
-    print("  \033[1;33m4.\033[0m 📦 Select features to install (13 options available)")
+    print("  \033[1;33m4.\033[0m 🏷️  Hostname (optional)")
+    print("  \033[1;33m5.\033[0m 📦 Select features to install (13 options available)")
     print()
     print("     \033[1;90mCore Features:\033[0m")
     print("       • Fail2ban, Docker, LEMP, Swap, Cron Jobs")
@@ -82,6 +83,9 @@ def main():
         inquirer.Text('ssh_key_path',
                      message="🔑 SSH private key path",
                      default="~/.ssh/id_rsa_gitlab"),
+        inquirer.Text('hostname',
+                     message="🏷️  Hostname (optional, leave blank to skip)",
+                     default=""),
         inquirer.Checkbox('features',
                          message="📦 Select features to install",
                          choices=[
@@ -140,7 +144,8 @@ def main():
     connection_answers = {
         'target_ip': answers['target_ip'],
         'target_user': answers['target_user'],
-        'ssh_key_path': answers['ssh_key_path']
+        'ssh_key_path': answers['ssh_key_path'],
+        'hostname': answers['hostname']
     }
 
     # Display selection summary
@@ -150,7 +155,10 @@ def main():
 
     print(f"📍 Target Server: \033[1;36m{connection_answers['target_ip']}\033[0m")
     print(f"👤 SSH User:      \033[1;36m{connection_answers['target_user']}\033[0m")
-    print(f"🔑 SSH Key:       \033[1;36m{connection_answers['ssh_key_path']}\033[0m\n")
+    print(f"🔑 SSH Key:       \033[1;36m{connection_answers['ssh_key_path']}\033[0m")
+    if connection_answers['hostname']:
+        print(f"🏷️  Hostname:      \033[1;36m{connection_answers['hostname']}\033[0m")
+    print()
 
     print("Selected Features:")
     feature_names = {
@@ -239,6 +247,7 @@ def main():
         '-e', f"target_ip={connection_answers['target_ip']}",
         '-e', f"target_user={connection_answers['target_user']}",
         '-e', f"ssh_key_path={connection_answers['ssh_key_path']}",
+        '-e', f"target_hostname={connection_answers['hostname']}",
         '-e', f"prompt_enable_fail2ban={'yes' if 'fail2ban' in selected_features else 'no'}",
         '-e', f"prompt_install_docker={'yes' if 'docker' in selected_features else 'no'}",
         '-e', f"prompt_install_lemp={'yes' if 'lemp' in selected_features else 'no'}",

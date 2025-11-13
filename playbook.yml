@@ -100,6 +100,8 @@
         ansible_python_interpreter: /usr/bin/python3
         # Store IP for fail2ban whitelist
         ip_address: "{{ target_ip }}"
+        # Store hostname for server configuration
+        server_hostname: "{{ target_hostname | default('') }}"
         # Pass feature selection flags to Play 2
         enable_fail2ban: "{{ prompt_enable_fail2ban | lower in ['yes', 'y', 'true'] }}"
         install_docker: "{{ prompt_install_docker | lower in ['yes', 'y', 'true'] }}"
