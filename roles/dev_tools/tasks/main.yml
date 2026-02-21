@@ -60,6 +60,7 @@
         name: neovim
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       tags:
         - dev
         - neovim
@@ -93,7 +94,6 @@
         repo: https://github.com/nvim-lua/kickstart.nvim.git
         dest: "/home/{{ ansible_user }}/.config/nvim"
         version: master
-        force: yes
       become: false
       tags:
         - dev
@@ -195,6 +195,7 @@
           - gnupg
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       tags:
         - dev
         - nodejs
@@ -244,6 +245,7 @@
       # Must run before installing Node.js from the new repository.
       ansible.builtin.apt:
         update_cache: yes
+        cache_valid_time: 3600
       tags:
         - dev
         - nodejs

@@ -35,14 +35,6 @@
     # Installs packages required for Docker repository setup and functionality.
 
     - name: "Docker Prerequisites | Install required system packages"
-      # Essential packages for Docker installation:
-      # - apt-transport-https: Allows apt to retrieve packages over HTTPS
-      # - ca-certificates: Common CA certificates for SSL verification
-      # - curl: Downloads Docker GPG key and other resources
-      # - gnupg: GPG key management for repository verification
-      # - lsb-release: Determines Ubuntu version for correct repository
-      # - software-properties-common: Provides add-apt-repository command
-      # - python3-pip: Required for docker-py module installation
       ansible.builtin.apt:
         pkg:
           - apt-transport-https
@@ -52,67 +44,67 @@
           - lsb-release
           - software-properties-common
           - python3-pip
-        state: latest
+        state: present
         update_cache: true
+        cache_valid_time: 3600
       tags:
         - docker-deps
         - packages
 
-    # -------------------------------------------------------------------------
-    # SECTION 2: Repository Conflict Resolution
-    # -------------------------------------------------------------------------
-    # Removes existing Docker configurations to prevent repository conflicts.
-    # Critical for systems with previous Docker installations or manual setups.
+    - name: "Docker Check | Test if Docker is already installed"
+      ansible.builtin.command: docker --version
+      register: docker_installed
+      changed_when: false
+      failed_when: false
+      tags:
+        - docker-cleanup
+        - docker-repo
 
-    - name: "Docker Cleanup | Remove existing Docker GPG key files"
-      # Removes GPG keys from multiple possible locations.
-      # Prevents conflicts between old and new repository configurations.
-      # Locations cleaned:
-      # - /etc/apt/trusted.gpg.d/docker.gpg (deprecated location)
-      # - /etc/apt/keyrings/docker.gpg (old keyring format)
-      # - /etc/apt/keyrings/docker.asc (current format - will be recreated)
-      # - /usr/share/keyrings/docker-archive-keyring.gpg (alternative location)
+    # -------------------------------------------------------------------------
+    # SECTION 2: Repository Conflict Resolution (first install only)
+    # -------------------------------------------------------------------------
+    # Only cleans up old Docker repo configs on first install.
+    # Skipped entirely when Docker is already working.
+
+    - name: "Docker Cleanup | Remove stale Docker GPG key files"
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
         - /etc/apt/trusted.gpg.d/docker.gpg
         - /etc/apt/keyrings/docker.gpg
-        - /etc/apt/keyrings/docker.asc
         - /usr/share/keyrings/docker-archive-keyring.gpg
+      when: docker_installed.rc != 0
       tags:
         - docker-cleanup
         - repo-cleanup
 
-    - name: "Docker Cleanup | Find all existing Docker repository files"
-      # Searches for any .list files containing 'docker' in sources.list.d.
-      # Registers results for deletion in next task.
+    - name: "Docker Cleanup | Find existing Docker repository files"
       ansible.builtin.find:
         paths: /etc/apt/sources.list.d
         patterns: "*docker*.list"
       register: docker_repo_files
+      when: docker_installed.rc != 0
       tags:
         - docker-cleanup
         - repo-cleanup
 
-    - name: "Docker Cleanup | Remove all Docker repository files"
-      # Deletes all Docker repository files found in previous task.
-      # Ensures clean slate for new repository configuration.
+    - name: "Docker Cleanup | Remove old Docker repository files"
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: absent
-      loop: "{{ docker_repo_files.files }}"
+      loop: "{{ docker_repo_files.files | default([]) }}"
+      when: docker_installed.rc != 0
       tags:
         - docker-cleanup
         - repo-cleanup
 
     - name: "Docker Cleanup | Remove Docker entries from main sources.list"
-      # Removes any Docker repository entries from main sources.list.
-      # Some installations incorrectly add Docker repos to this file.
       ansible.builtin.lineinfile:
         path: /etc/apt/sources.list
         regexp: .*download.docker.com.*
         state: absent
+      when: docker_installed.rc != 0
       tags:
         - docker-cleanup
         - repo-cleanup
@@ -124,46 +116,32 @@
     # Uses modern signed-by approach to avoid deprecated apt-key warnings.
 
     - name: "Docker Repository | Create keyrings directory"
-      # Modern approach: Store GPG keys in /etc/apt/keyrings
-      # Replaces deprecated /etc/apt/trusted.gpg.d approach
-      # Directory must exist before adding Docker GPG key.
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
+      when: docker_installed.rc != 0
       tags:
         - docker-repo
         - gpg-setup
 
     - name: "Docker Repository | Download Docker GPG key"
-      # Downloads Docker's official GPG key in ASCII-armored format.
-      # Key is used to verify authenticity of Docker packages.
-      # Uses get_url for idempotency (won't re-download if already present).
       ansible.builtin.get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
+      when: docker_installed.rc != 0
       tags:
         - docker-repo
         - gpg-key
 
     - name: "Docker Repository | Clean apt cache to prevent conflicts"
-      # Removes cached package metadata that might contain old Docker info.
-      # Ensures subsequent apt operations use fresh repository data.
       command: apt-get clean
       changed_when: false
+      when: docker_installed.rc != 0
       tags:
         - docker-repo
         - cache-cleanup
-
-    - name: "Docker Repository | Update apt cache"
-      # Refreshes package metadata from all configured repositories.
-      # Ensures we have latest package information before adding Docker repo.
-      ansible.builtin.apt:
-        update_cache: yes
-      tags:
-        - docker-repo
-        - apt-update
 
     - name: "Docker Repository | Detect system architecture for Docker repo"
       ansible.builtin.set_fact:
@@ -172,15 +150,12 @@
         - docker-repo
 
     - name: "Docker Repository | Add Docker APT repository with GPG verification"
-      # Adds official Docker repository for Ubuntu.
-      # Uses signed-by to associate GPG key with this specific repository.
-      # Architecture: Auto-detected (amd64 or arm64).
-      # Distribution: Uses ansible_distribution_release (focal, jammy, noble, etc.)
       apt_repository:
         repo: "deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
         filename: docker
         update_cache: yes
+      when: docker_installed.rc != 0
       tags:
         - docker-repo
         - apt-source
@@ -191,18 +166,14 @@
     # Installs Docker Engine and core components.
 
     - name: "Docker Installation | Install Docker Engine packages"
-      # Installs core Docker components:
-      # - docker-ce: Docker Engine (Community Edition) - the container runtime
-      # - docker-ce-cli: Docker command-line interface tools
-      # - containerd.io: Industry-standard container runtime
-      # Note: BuildX and Compose plugins installed separately if needed
       ansible.builtin.apt:
         pkg:
           - docker-ce
           - docker-ce-cli
           - containerd.io
-        state: latest
+        state: present
         update_cache: true
+        cache_valid_time: 3600
       tags:
         - docker-install
         - packages
@@ -244,9 +215,17 @@
     # -------------------------------------------------------------------------
     # Installs Docker Compose for multi-container applications.
 
+    - name: "Docker Compose | Check if docker-compose is already installed"
+      ansible.builtin.stat:
+        path: /usr/local/bin/docker-compose
+      register: compose_binary
+      tags:
+        - docker-compose
+
     - name: "Docker Compose | Detect compose architecture"
       ansible.builtin.set_fact:
         compose_arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+      when: not compose_binary.stat.exists
       tags:
         - docker-compose
 
@@ -255,7 +234,9 @@
         url: "https://github.com/docker/compose/releases/{{ docker_compose_version }}/download/docker-compose-Linux-{{ compose_arch }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
-      when: docker_compose_version is defined and docker_compose_version != "latest"
+      when:
+        - not compose_binary.stat.exists
+        - docker_compose_version is defined and docker_compose_version != "latest"
       tags:
         - docker-compose
         - compose-install
@@ -265,7 +246,9 @@
         url: "https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-{{ compose_arch }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
-      when: docker_compose_version is not defined or docker_compose_version == "latest"
+      when:
+        - not compose_binary.stat.exists
+        - docker_compose_version is not defined or docker_compose_version == "latest"
       tags:
         - docker-compose
         - compose-install

@@ -58,6 +58,7 @@
         name: nginx
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       tags:
         - lemp
         - nginx
@@ -132,6 +133,7 @@
         name: default-mysql-server
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       tags:
         - lemp
         - mysql
@@ -293,6 +295,7 @@
         name: "{{ php_modules }}"
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       when: php_modules is defined
       tags:
         - lemp

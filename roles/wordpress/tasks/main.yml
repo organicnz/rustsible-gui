@@ -271,7 +271,9 @@
       # - Required to enter directory (cd into it)
       # - Required to list directory contents
       # - Does not allow executing files inside
-      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d -exec chmod 750 {} \\;"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d ! -perm 750 -exec chmod 750 {} \\;"
+      register: dir_perms_result
+      changed_when: dir_perms_result.stdout | default('') | length > 0
       tags:
         - wordpress
         - wordpress-perms
@@ -279,19 +281,9 @@
         - permissions
 
     - name: "WordPress Security | Set file permissions to 640 (rw-r-----)"
-      # File permissions: 640
-      # - Owner (www-data): Read and write
-      # - Group (www-data): Read only
-      # - Others: No access
-      #
-      # More restrictive than WordPress default 644:
-      # - Prevents other users from reading wp-config.php
-      # - Protects sensitive configuration and credentials
-      # - Still allows PHP-FPM to read and execute files
-      #
-      # Note: PHP files don't need execute permission
-      # PHP interpreter reads and interprets them
-      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f -exec chmod 640 {} \\;"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f ! -perm 640 -exec chmod 640 {} \\;"
+      register: file_perms_result
+      changed_when: file_perms_result.stdout | default('') | length > 0
       tags:
         - wordpress
         - wordpress-perms
