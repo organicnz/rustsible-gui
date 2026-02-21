@@ -84,13 +84,10 @@
     - swap-info
 
 - name: "Swap Status | Get current swap file size in MB"
-  # Measures existing swap file to compare with calculated target size.
-  # Only runs if swap file exists to avoid errors.
-  shell: du -m /swapfile | cut -f1
-  register: current_swap_size
+  ansible.builtin.set_fact:
+    current_swap_size:
+      stdout: "{{ (swap_file_check.stat.size / 1048576) | int }}"
   when: swap_file_check.stat.exists
-  changed_when: false
-  failed_when: false
   tags:
     - swap
     - swap-info

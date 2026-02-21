@@ -59,8 +59,8 @@
     name: "Unattended security upgrades"
     state: present
     minute: "{{ cron_unattended_upgrade_minute | default('1') }}"
-    hour: "{{ cron_unattended_upgrade_hour | default('*/48') }}"
-    day: "*"
+    hour: "{{ cron_unattended_upgrade_hour | default('3') }}"
+    day: "{{ cron_unattended_upgrade_day | default('*/2') }}"
     month: "*"
     weekday: "*"
     job: "/usr/bin/unattended-upgrade -v >/dev/null 2>&1"
@@ -104,9 +104,9 @@
     name: "System update, upgrade, and cleanup"
     user: root
     state: present
-    minute: "{{ cron_system_update_minute | default('1') }}"
-    hour: "{{ cron_system_update_hour | default('*/48') }}"
-    day: "*"
+    minute: "{{ cron_system_update_minute | default('30') }}"
+    hour: "{{ cron_system_update_hour | default('4') }}"
+    day: "{{ cron_system_update_day | default('*/2') }}"
     month: "*"
     weekday: "*"
     job: "apt update && apt upgrade -y && apt autoremove -y && apt clean >/dev/null 2>&1"

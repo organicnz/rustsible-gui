@@ -385,9 +385,12 @@
     - name: "Database | Update rkhunter database"
       ansible.builtin.command: rkhunter --update
       changed_when: false
+      failed_when: false
 
     - name: "Baseline | Create initial file properties database"
       ansible.builtin.command: rkhunter --propupd
+      args:
+        creates: /var/lib/rkhunter/db/rkhunter.dat
       changed_when: false
 
     - name: "Cron | Schedule daily rootkit scans"
@@ -416,19 +419,23 @@
         name: aide
         state: present
 
+    - name: "Database | Check if AIDE database exists"
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db
+      register: aide_db
+
     - name: "Database | Initialize AIDE database"
       ansible.builtin.command: aideinit
       args:
         creates: /var/lib/aide/aide.db.new
-      async: 600
-      poll: 0
-      register: aide_init
+      when: not aide_db.stat.exists
 
     - name: "Database | Move AIDE database to production location"
       ansible.builtin.command: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
       args:
+        removes: /var/lib/aide/aide.db.new
         creates: /var/lib/aide/aide.db
-      when: aide_init is defined
+      when: not aide_db.stat.exists
 
     - name: "Cron | Schedule daily integrity checks"
       ansible.builtin.cron:
@@ -663,9 +670,15 @@
         regexp: '^\s+- interface:'
         line: "    - interface: {{ suricata_interface }}"
 
+    - name: "Rules | Check if Suricata rules exist"
+      ansible.builtin.stat:
+        path: /var/lib/suricata/rules/suricata.rules
+      register: suricata_rules
+
     - name: "Rules | Update Suricata rulesets"
       ansible.builtin.command: suricata-update
       changed_when: false
+      when: not suricata_rules.stat.exists
 
     - name: "Service | Enable and start Suricata"
       ansible.builtin.systemd:

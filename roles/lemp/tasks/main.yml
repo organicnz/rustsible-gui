@@ -226,7 +226,7 @@
         host: localhost
         state: absent
         login_unix_socket: /var/run/mysqld/mysqld.sock
-      ignore_errors: yes  # May not exist on fresh install
+      failed_when: false
       tags:
         - lemp
         - mysql
@@ -243,7 +243,7 @@
         login_password: "{{ mysql_root_password | default('') }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
       when: mysql_root_password is defined
-      ignore_errors: yes  # May not exist on some installations
+      failed_when: false
       tags:
         - lemp
         - mysql
@@ -342,7 +342,7 @@
           - 403
         timeout: 5
       register: nginx_check
-      ignore_errors: yes
+      failed_when: false
       tags:
         - lemp
         - validate
@@ -354,7 +354,7 @@
       ansible.builtin.command: mysqladmin ping -u root
       register: mysql_check
       changed_when: false
-      ignore_errors: yes
+      failed_when: false
       tags:
         - lemp
         - validate
@@ -363,10 +363,10 @@
     - name: "Validation | Check PHP-FPM service status"
       # Verifies PHP-FPM service is running.
       # Service name may vary: php7.4-fpm, php8.1-fpm, etc.
-      ansible.builtin.shell: systemctl is-active php*-fpm
+      ansible.builtin.command: systemctl is-active php8.3-fpm
       register: php_check
       changed_when: false
-      ignore_errors: yes
+      failed_when: false
       tags:
         - lemp
         - validate

@@ -213,39 +213,53 @@
         - nodejs
         - security
 
-    - name: "Node.js | Download and install NodeSource GPG signing key"
-      # Downloads NodeSource GPG key and converts to binary format.
-      # GPG key verifies authenticity of NodeSource packages.
-      # creates: Makes this task idempotent - only runs if key doesn't exist.
-      ansible.builtin.shell: |
-        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+    - name: "Node.js | Check if Node.js is already installed"
+      ansible.builtin.command: node --version
+      register: node_already_installed
+      changed_when: false
+      failed_when: false
+      tags:
+        - dev
+        - nodejs
+
+    - name: "Node.js | Download NodeSource GPG signing key"
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /etc/apt/keyrings/nodesource.key
+        mode: '0644'
+      when: node_already_installed.rc != 0
+      tags:
+        - dev
+        - nodejs
+        - security
+
+    - name: "Node.js | Dearmor NodeSource GPG key"
+      ansible.builtin.shell: gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg < /etc/apt/keyrings/nodesource.key
       args:
         creates: /etc/apt/keyrings/nodesource.gpg
+      when: node_already_installed.rc != 0
       tags:
         - dev
         - nodejs
         - security
 
     - name: "Node.js | Add NodeSource repository to APT sources"
-      # Adds NodeSource repository for Node.js {{ nodejs_version | default('22') }}.x
-      # NodeSource provides more recent versions than Ubuntu repositories.
-      # signed-by: Specifies which GPG key to use for verification.
-      # creates: Prevents duplicate repository entries.
-      ansible.builtin.shell: |
-        echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ nodejs_version | default('22') }}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
-      args:
-        creates: /etc/apt/sources.list.d/nodesource.list
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ nodejs_version | default('22') }}.x nodistro main"
+        state: present
+        filename: nodesource
+        update_cache: yes
+      when: node_already_installed.rc != 0
       tags:
         - dev
         - nodejs
         - repository
 
     - name: "Node.js | Update APT package cache with NodeSource packages"
-      # Refreshes package cache to include NodeSource repository packages.
-      # Must run before installing Node.js from the new repository.
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
+      when: node_already_installed.rc != 0
       tags:
         - dev
         - nodejs
