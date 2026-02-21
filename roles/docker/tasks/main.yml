@@ -270,16 +270,23 @@
         - python-modules
         - packages
 
+    - name: "Docker Python | Check if Docker SDK is already available"
+      ansible.builtin.command: python3 -c "import docker"
+      register: docker_sdk_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - docker-python
+
     - name: "Docker Python | Install Docker SDK via pip for Ubuntu 24.04+"
-      # Fallback: Install docker-py via pip with --break-system-packages.
-      # Required for Ubuntu 24.04+ due to PEP 668 (externally managed environments).
-      # Without this flag, pip refuses to install in system Python environment.
-      # failed_when: false - Don't fail if apt installation succeeded above.
       pip:
         name: docker
         extra_args: --break-system-packages
-      when: ansible_distribution_version is version('24.04', '>=')
+      when:
+        - docker_sdk_check.rc != 0
+        - ansible_distribution_version is version('24.04', '>=')
       failed_when: false
+      changed_when: false
       tags:
         - docker-python
         - python-modules

@@ -240,50 +240,58 @@
 
 - name: "WordPress Security | Set proper ownership and permissions"
   block:
+    - name: "WordPress Security | Check current ownership of web root"
+      ansible.builtin.stat:
+        path: "/var/www/{{ full_domain }}/wordpress"
+      register: wp_dir_stat
+      tags:
+        - wordpress
+        - wordpress-perms
+
     - name: "WordPress Security | Set ownership to www-data (Nginx/PHP-FPM user)"
-      # www-data is the default web server user on Ubuntu/Debian.
-      # Nginx and PHP-FPM run as www-data for security isolation.
-      # Recursive: yes ensures all files and subdirectories are updated.
-      #
-      # Why www-data ownership:
-      # - PHP-FPM needs to read WordPress files
-      # - WordPress needs to write uploads, cache, temp files
-      # - Prevents other users from accessing WordPress files
       ansible.builtin.file:
         path: "/var/www/{{ full_domain }}"
         state: directory
         recurse: yes
         owner: www-data
         group: www-data
+      when: wp_dir_stat.stat.exists and wp_dir_stat.stat.pw_name != 'www-data'
       tags:
         - wordpress
         - wordpress-perms
         - security
         - permissions
 
-    - name: "WordPress Security | Set directory permissions to 750 (rwxr-x---)"
-      # Directory permissions: 750
-      # - Owner (www-data): Full access (read/write/execute)
-      # - Group (www-data): Read and execute (can browse, cannot write)
-      # - Others: No access (maximum security)
-      #
-      # Execute permission on directories:
-      # - Required to enter directory (cd into it)
-      # - Required to list directory contents
-      # - Does not allow executing files inside
-      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d ! -perm 750 -exec chmod 750 {} \\;"
-      register: dir_perms_result
-      changed_when: dir_perms_result.stdout | default('') | length > 0
+    - name: "WordPress Security | Check if directory permissions need fixing"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d ! -perm 750 -print -quit"
+      register: dir_perms_check
+      changed_when: false
+      when: wp_dir_stat.stat.exists
+      tags:
+        - wordpress
+        - wordpress-perms
+
+    - name: "WordPress Security | Set directory permissions to 750"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type d ! -perm 750 -exec chmod 750 {} +"
+      when: wp_dir_stat.stat.exists and dir_perms_check.stdout | default('') | length > 0
       tags:
         - wordpress
         - wordpress-perms
         - security
         - permissions
 
-    - name: "WordPress Security | Set file permissions to 640 (rw-r-----)"
-      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f ! -perm 640 -exec chmod 640 {} \\;"
-      register: file_perms_result
-      changed_when: file_perms_result.stdout | default('') | length > 0
+    - name: "WordPress Security | Check if file permissions need fixing"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f ! -perm 640 -print -quit"
+      register: file_perms_check
+      changed_when: false
+      when: wp_dir_stat.stat.exists
+      tags:
+        - wordpress
+        - wordpress-perms
+
+    - name: "WordPress Security | Set file permissions to 640"
+      ansible.builtin.shell: "/usr/bin/find /var/www/{{ full_domain }}/wordpress/ -type f ! -perm 640 -exec chmod 640 {} +"
+      when: wp_dir_stat.stat.exists and file_perms_check.stdout | default('') | length > 0
       tags:
         - wordpress
         - wordpress-perms

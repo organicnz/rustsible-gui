@@ -26,25 +26,10 @@
 # -----------------------------------------------------------------------------
 # Analyzes system memory to determine appropriate swap size.
 
-- name: "Memory Analysis | Read system memory information from /proc/meminfo"
-  # Reads memory information directly from kernel interface.
-  # More reliable than alternatives like 'free' command which may vary by distro.
-  command: cat /proc/meminfo
-  register: meminfo
-  changed_when: false
-  tags:
-    - always
-    - swap
-    - swap-info
-    - system
-
 - name: "Memory Analysis | Calculate total memory in MB and GB"
-  # Extracts MemTotal from /proc/meminfo and converts to usable units.
-  # MemTotal is in KB, so we divide by 1024 for MB, 1024*1024 for GB.
-  # Example: 8192000 KB → 8000 MB → 7.8 GB
   ansible.builtin.set_fact:
-    mem_total_mb: "{{ (meminfo.stdout | regex_search('MemTotal:\\s+([0-9]+)', '\\1') | first | int) // 1024 }}"
-    mem_total_gb: "{{ ((meminfo.stdout | regex_search('MemTotal:\\s+([0-9]+)', '\\1') | first | int) // 1024 // 1024) }}"
+    mem_total_mb: "{{ (ansible_memtotal_mb | int) }}"
+    mem_total_gb: "{{ (ansible_memtotal_mb | int) // 1024 }}"
   tags:
     - swap
     - swap-calculate

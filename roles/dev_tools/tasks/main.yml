@@ -100,16 +100,23 @@
         - neovim
         - config
 
+    - name: "Neovim | Check ownership of configuration directory"
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user }}/.config/nvim"
+      register: nvim_dir_stat
+      tags:
+        - dev
+        - neovim
+        - permissions
+
     - name: "Neovim | Set proper ownership of configuration directory"
-      # Ensures all files in ~/.config/nvim are owned by the correct user.
-      # Prevents permission issues when Neovim tries to write plugins/cache.
-      # Recursive: yes ensures all subdirectories are also updated.
       ansible.builtin.file:
         path: "/home/{{ ansible_user }}/.config/nvim"
         state: directory
         recurse: yes
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
+      when: nvim_dir_stat.stat.exists and nvim_dir_stat.stat.pw_name != ansible_user
       tags:
         - dev
         - neovim
