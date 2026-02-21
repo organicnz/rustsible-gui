@@ -12,6 +12,59 @@ use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+// macOS dark theme system colors (NSColor equivalents)
+mod macos_colors {
+    use eframe::egui::Color32;
+
+    // Standard macOS dark mode backgrounds
+    pub const WINDOW_BG: Color32 = Color32::from_rgb(30, 30, 30);
+    pub const SIDEBAR_BG: Color32 = Color32::from_rgb(45, 45, 47);
+    pub const TOOLBAR_BG: Color32 = Color32::from_rgb(38, 38, 40);
+    pub const GROUPED_BG: Color32 = Color32::from_rgb(44, 44, 46);
+    pub const TERMINAL_BG: Color32 = Color32::from_rgb(24, 24, 24);
+
+    // Text (NSColor.label equivalents)
+    pub const LABEL_PRIMARY: Color32 = Color32::WHITE;
+    pub const LABEL_SECONDARY: Color32 = Color32::from_rgb(152, 152, 157);
+    pub const LABEL_TERTIARY: Color32 = Color32::from_rgb(99, 99, 102);
+
+    // Accent
+    pub const ACCENT_BLUE: Color32 = Color32::from_rgb(10, 132, 255);
+
+    // Status (NSColor.system* equivalents)
+    pub const SYSTEM_RED: Color32 = Color32::from_rgb(255, 69, 58);
+    pub const SYSTEM_GREEN: Color32 = Color32::from_rgb(48, 209, 88);
+    pub const SYSTEM_YELLOW: Color32 = Color32::from_rgb(255, 214, 10);
+    pub const SYSTEM_ORANGE: Color32 = Color32::from_rgb(255, 159, 10);
+    pub const SYSTEM_CYAN: Color32 = Color32::from_rgb(100, 210, 255);
+    pub const SYSTEM_PURPLE: Color32 = Color32::from_rgb(191, 90, 242);
+
+    // Borders
+    pub const SEPARATOR: Color32 = Color32::from_rgb(56, 56, 58);
+    pub const SELECTED_CONTENT_BG: Color32 = Color32::from_rgb(0, 88, 208);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NavSection {
+    Connection,
+    Features,
+    Security,
+    Maintenance,
+    Output,
+}
+
+impl NavSection {
+    fn label(&self) -> &'static str {
+        match self {
+            NavSection::Connection => "Connection",
+            NavSection::Features => "Features",
+            NavSection::Security => "Security",
+            NavSection::Maintenance => "Maintenance",
+            NavSection::Output => "Output",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ProvisioningConfig {
     ip_address: String,
@@ -88,6 +141,8 @@ struct AnsibleProvisioningApp {
     child_pid: Arc<AtomicU32>,
     // Signal handling for graceful shutdown
     term_signal: Arc<AtomicBool>,
+    // Navigation
+    selected_section: NavSection,
 }
 
 impl Default for AnsibleProvisioningApp {
@@ -104,6 +159,7 @@ impl Default for AnsibleProvisioningApp {
             shutdown_signal: Arc::new(AtomicBool::new(false)),
             child_pid: Arc::new(AtomicU32::new(0)),
             term_signal: Arc::new(AtomicBool::new(false)),
+            selected_section: NavSection::Connection,
         }
     }
 }
@@ -121,6 +177,7 @@ impl AnsibleProvisioningApp {
         self.output_lines.clear();
         self.result_message = None;
         self.error_message = None;
+        self.selected_section = NavSection::Output;
 
         // Reset shutdown signal for new provisioning run
         self.shutdown_signal.store(false, Ordering::SeqCst);
@@ -192,6 +249,285 @@ impl AnsibleProvisioningApp {
 
         println!("Cleanup completed");
     }
+
+    fn render_connection(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Connection")
+            .size(15.0)
+            .strong()
+            .color(macos_colors::LABEL_PRIMARY));
+        ui.add_space(8.0);
+
+        ui.label(egui::RichText::new("Server Address (IP or DNS)")
+            .size(12.0)
+            .color(macos_colors::LABEL_SECONDARY));
+        ui.add_space(2.0);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.config.ip_address)
+                .desired_width(f32::INFINITY)
+                .font(egui::FontId::proportional(13.0))
+        );
+        ui.add_space(8.0);
+
+        ui.label(egui::RichText::new("SSH User")
+            .size(12.0)
+            .color(macos_colors::LABEL_SECONDARY));
+        ui.add_space(2.0);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.config.ssh_user)
+                .desired_width(f32::INFINITY)
+                .font(egui::FontId::proportional(13.0))
+        );
+        ui.add_space(8.0);
+
+        ui.label(egui::RichText::new("SSH Private Key Path")
+            .size(12.0)
+            .color(macos_colors::LABEL_SECONDARY));
+        ui.add_space(2.0);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.config.ssh_key_path)
+                .desired_width(f32::INFINITY)
+                .font(egui::FontId::proportional(13.0))
+        );
+        ui.label(egui::RichText::new("Supports ~ for home directory")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(8.0);
+
+        ui.label(egui::RichText::new("Hostname (optional)")
+            .size(12.0)
+            .color(macos_colors::LABEL_SECONDARY));
+        ui.add_space(2.0);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.config.hostname)
+                .desired_width(f32::INFINITY)
+                .font(egui::FontId::proportional(13.0))
+        );
+    }
+
+    fn render_features(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Features")
+            .size(15.0)
+            .strong()
+            .color(macos_colors::LABEL_PRIMARY));
+        ui.add_space(8.0);
+
+        ui.checkbox(&mut self.config.fail2ban, egui::RichText::new("Fail2ban Intrusion Prevention").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.docker, egui::RichText::new("Docker & Docker Compose").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.swap, egui::RichText::new("Swap Memory (auto-sized)").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.lemp, egui::RichText::new("LEMP Stack (Nginx, MySQL, PHP)").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.devtools, egui::RichText::new("Development Tools (Neovim, Node.js, Claude Code)").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.wordpress, egui::RichText::new("WordPress CMS").size(13.0));
+        ui.add_space(2.0);
+        ui.checkbox(&mut self.config.certbot, egui::RichText::new("Certbot SSL/TLS Certificates").size(13.0));
+    }
+
+    fn render_security(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Security")
+            .size(15.0)
+            .strong()
+            .color(macos_colors::LABEL_PRIMARY));
+        ui.add_space(8.0);
+
+        ui.checkbox(&mut self.config.system_hardening, egui::RichText::new("System Hardening").size(13.0));
+        ui.label(egui::RichText::new("   Kernel hardening, secure shared memory")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.apparmor, egui::RichText::new("AppArmor Enforcement").size(13.0));
+        ui.label(egui::RichText::new("   Mandatory access control")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.rootkit_detection, egui::RichText::new("Rootkit Detection (rkhunter)").size(13.0));
+        ui.label(egui::RichText::new("   Daily scans for malware")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.file_integrity, egui::RichText::new("File Integrity Monitoring (AIDE)").size(13.0));
+        ui.label(egui::RichText::new("   Tracks unauthorized file changes")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.audit_logging, egui::RichText::new("Audit Logging (auditd)").size(13.0));
+        ui.label(egui::RichText::new("   System call auditing")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.log_monitoring, egui::RichText::new("Log Monitoring (Logwatch)").size(13.0));
+        ui.label(egui::RichText::new("   Daily log analysis reports")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.advanced_protection, egui::RichText::new("Advanced Protection").size(13.0));
+        ui.label(egui::RichText::new("   2FA, Backups, USB restrictions")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+    }
+
+    fn render_maintenance(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Maintenance")
+            .size(15.0)
+            .strong()
+            .color(macos_colors::LABEL_PRIMARY));
+        ui.add_space(8.0);
+
+        ui.checkbox(&mut self.config.cron_jobs, egui::RichText::new("Automated Updates & Cron Jobs").size(13.0));
+        ui.add_space(4.0);
+        ui.checkbox(&mut self.config.periodic_reboot, egui::RichText::new("Periodic System Reboot").size(13.0));
+
+        if self.config.periodic_reboot {
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Reboot Schedule")
+                .size(12.0)
+                .color(macos_colors::LABEL_SECONDARY));
+            ui.add_space(2.0);
+            egui::ComboBox::from_id_salt("reboot_hour")
+                .selected_text(egui::RichText::new(format_reboot_schedule(&self.config.reboot_hour)).size(13.0))
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.config.reboot_hour, "1".to_string(), "Daily at 1:00 AM");
+                    ui.selectable_value(&mut self.config.reboot_hour, "2".to_string(), "Daily at 2:00 AM");
+                    ui.selectable_value(&mut self.config.reboot_hour, "3".to_string(), "Daily at 3:00 AM");
+                    ui.selectable_value(&mut self.config.reboot_hour, "4".to_string(), "Daily at 4:00 AM");
+                    ui.selectable_value(&mut self.config.reboot_hour, "5".to_string(), "Daily at 5:00 AM");
+                    ui.selectable_value(&mut self.config.reboot_hour, "*/6".to_string(), "Every 6 hours");
+                    ui.selectable_value(&mut self.config.reboot_hour, "*/12".to_string(), "Every 12 hours");
+                    ui.selectable_value(&mut self.config.reboot_hour, "*/24".to_string(), "Every 24 hours");
+                });
+        }
+    }
+
+    fn render_output(&mut self, ui: &mut egui::Ui) {
+        // Success banner
+        if let Some(msg) = self.result_message.clone() {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_premultiplied(48, 209, 88, 25))
+                .stroke(egui::Stroke::new(0.5, macos_colors::SYSTEM_GREEN))
+                .corner_radius(6.0)
+                .inner_margin(10.0)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Success")
+                        .size(13.0)
+                        .strong()
+                        .color(macos_colors::SYSTEM_GREEN));
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new(&msg).size(12.0));
+                });
+            ui.add_space(8.0);
+        }
+
+        // Error banner
+        if let Some(msg) = self.error_message.clone() {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_premultiplied(255, 69, 58, 25))
+                .stroke(egui::Stroke::new(0.5, macos_colors::SYSTEM_RED))
+                .corner_radius(6.0)
+                .inner_margin(10.0)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Error")
+                        .size(13.0)
+                        .strong()
+                        .color(macos_colors::SYSTEM_RED));
+                    ui.add_space(4.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(120.0)
+                        .show(ui, |ui| {
+                            for line in msg.lines() {
+                                let color = if line.contains("fatal:") || line.contains("FAILED!") || line.contains("ERROR") {
+                                    macos_colors::SYSTEM_RED
+                                } else {
+                                    egui::Color32::from_rgb(220, 220, 220)
+                                };
+                                ui.label(egui::RichText::new(line)
+                                    .font(egui::FontId::monospace(11.0))
+                                    .color(color));
+                            }
+                        });
+                });
+            ui.add_space(8.0);
+        }
+
+        // Terminal header
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Output")
+                .size(15.0)
+                .strong()
+                .color(macos_colors::LABEL_PRIMARY));
+            if self.provisioning {
+                ui.spinner();
+            }
+        });
+        ui.add_space(4.0);
+
+        // Terminal output area
+        if self.provisioning || !self.output_lines.is_empty() {
+            egui::Frame::new()
+                .fill(macos_colors::TERMINAL_BG)
+                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
+                .corner_radius(6.0)
+                .inner_margin(10.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Provisioning Output")
+                            .size(12.0)
+                            .color(macos_colors::LABEL_SECONDARY));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let open_btn = ui.add(egui::Button::new(
+                                egui::RichText::new("Open Log").size(11.0)
+                            ).corner_radius(6.0));
+                            if open_btn.clicked() {
+                                if let Ok(repo_root) = get_repo_root() {
+                                    let log_path = repo_root.join("provisioning.log");
+                                    let _ = std::process::Command::new("open")
+                                        .arg(&log_path)
+                                        .spawn();
+                                }
+                            }
+                            let copy_btn = ui.add(egui::Button::new(
+                                egui::RichText::new("Copy Logs").size(11.0)
+                            ).corner_radius(6.0));
+                            if copy_btn.clicked() {
+                                let all_output = self.output_lines.join("\n");
+                                ui.ctx().copy_text(all_output);
+                            }
+                        });
+                    });
+                    ui.add_space(4.0);
+
+                    egui::ScrollArea::vertical()
+                        .max_height(ui.available_height() - 8.0)
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            for line in &self.output_lines {
+                                let (color, bold) = ansible_line_style(line);
+                                let mut text = egui::RichText::new(line)
+                                    .font(egui::FontId::monospace(11.0))
+                                    .color(color);
+                                if bold {
+                                    text = text.strong();
+                                }
+                                ui.label(text);
+                            }
+                        });
+                });
+        } else {
+            ui.label(egui::RichText::new("No output yet. Start provisioning to see results.")
+                .size(12.0)
+                .color(macos_colors::LABEL_TERTIARY));
+        }
+    }
 }
 
 impl Drop for AnsibleProvisioningApp {
@@ -211,7 +547,6 @@ impl eframe::App for AnsibleProvisioningApp {
         // Check for signal-based shutdown request
         if self.term_signal.load(Ordering::Relaxed) {
             println!("Signal received - initiating graceful shutdown...");
-            // Trigger cleanup and close window
             self.cleanup();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
@@ -256,447 +591,125 @@ impl eframe::App for AnsibleProvisioningApp {
         // Auto-save config on changes
         let _ = save_cache(&self.config);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                // Center all content with flexible max width
-                let max_width = 920.0_f32.min(ui.available_width() - 40.0);
+        // Toolbar
+        egui::TopBottomPanel::top("toolbar")
+            .frame(egui::Frame::new()
+                .fill(macos_colors::TOOLBAR_BG)
+                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
+                .inner_margin(egui::vec2(12.0, 6.0)))
+            .show(ctx, |ui| {
+                ui.add_space(2.0);
                 ui.horizontal(|ui| {
-                    ui.add_space((ui.available_width() - max_width).max(0.0) / 2.0);
-                    ui.vertical(|ui| {
-                        ui.set_max_width(max_width);
-                        
-                ui.add_space(20.0);
+                    let button_text = if self.provisioning {
+                        "Provisioning..."
+                    } else {
+                        "Start Provisioning"
+                    };
 
-                // Header with gradient-like effect and glow
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(93, 173, 226, 20))
-                    .rounding(16.0)
-                    .inner_margin(egui::vec2(24.0, 20.0))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(93, 173, 226, 60)))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 4.0),
-                        blur: 16.0,
-                        spread: 0.0,
-                        color: egui::Color32::from_rgba_premultiplied(93, 173, 226, 30),
+                    let button = egui::Button::new(
+                        egui::RichText::new(button_text).size(13.0).strong()
+                    )
+                    .fill(if self.provisioning {
+                        macos_colors::GROUPED_BG
+                    } else {
+                        macos_colors::ACCENT_BLUE
                     })
-                    .show(ui, |ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.heading(egui::RichText::new("🖥️ Ubuntu Server Provisioning")
-                                .size(38.0)
-                                .color(egui::Color32::from_rgb(93, 173, 226))
-                                .strong());
-                            ui.add_space(8.0);
-                            ui.label(egui::RichText::new("Configure and deploy your server with one click")
-                                .size(16.0)
-                                .color(egui::Color32::from_rgb(180, 185, 190)));
-                        });
-                    });
+                    .corner_radius(6.0)
+                    .min_size(egui::vec2(140.0, 28.0));
 
-                ui.add_space(25.0);
+                    let response = ui.add_enabled(!self.provisioning, button);
 
-                // Connection Information
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(37, 41, 48, 200))
-                    .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgba_premultiplied(93, 173, 226, 100)))
-                    .rounding(14.0)
-                    .inner_margin(egui::vec2(22.0, 20.0))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 3.0),
-                        blur: 12.0,
-                        spread: 0.0,
-                        color: egui::Color32::from_black_alpha(60),
-                    })
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new("📡 Connection Information")
-                            .size(20.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(93, 173, 226)));
-                        ui.add_space(12.0);
+                    if response.clicked() {
+                        self.launch_provisioning();
+                    }
 
-                        ui.label(egui::RichText::new("IP Address").size(13.0).color(egui::Color32::from_rgb(200, 200, 200)));
-                        ui.add_space(4.0);
-                        let ip_response = ui.add(
-                            egui::TextEdit::singleline(&mut self.config.ip_address)
-                                .desired_width(f32::INFINITY)
-                                .font(egui::FontId::proportional(14.0))
-                        );
-                        if ip_response.changed() {
-                            // Visual feedback on change
-                        }
-                        ui.add_space(10.0);
+                    if self.provisioning {
+                        ui.spinner();
+                        ui.label(egui::RichText::new("Running...")
+                            .size(12.0)
+                            .color(macos_colors::LABEL_SECONDARY));
+                    }
 
-                        ui.label(egui::RichText::new("SSH User").size(13.0).color(egui::Color32::from_rgb(200, 200, 200)));
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.config.ssh_user)
-                                .desired_width(f32::INFINITY)
-                                .font(egui::FontId::proportional(14.0))
-                        );
-                        ui.add_space(10.0);
-
-                        ui.label(egui::RichText::new("SSH Private Key Path").size(13.0).color(egui::Color32::from_rgb(200, 200, 200)));
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.config.ssh_key_path)
-                                .desired_width(f32::INFINITY)
-                                .font(egui::FontId::proportional(14.0))
-                        );
-                        ui.label(egui::RichText::new("💡 Supports ~ for home directory")
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new("Settings auto-saved")
                             .size(11.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(10.0);
-
-                        ui.label(egui::RichText::new("Hostname (optional)").size(13.0).color(egui::Color32::from_rgb(200, 200, 200)));
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.config.hostname)
-                                .desired_width(f32::INFINITY)
-                                .font(egui::FontId::proportional(14.0))
-                        );
+                            .color(macos_colors::LABEL_TERTIARY));
                     });
-
-                ui.add_space(18.0);
-
-                // Core Features
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(37, 41, 48, 200))
-                    .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgba_premultiplied(93, 173, 226, 100)))
-                    .rounding(14.0)
-                    .inner_margin(egui::vec2(22.0, 20.0))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 3.0),
-                        blur: 12.0,
-                        spread: 0.0,
-                        color: egui::Color32::from_black_alpha(60),
-                    })
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        
-                        ui.label(egui::RichText::new("⚡ Core Features")
-                            .size(20.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(93, 173, 226)));
-                        ui.add_space(12.0);
-
-                        ui.checkbox(&mut self.config.fail2ban, egui::RichText::new("🛡️ Fail2ban Intrusion Prevention").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.docker, egui::RichText::new("🐳 Docker & Docker Compose").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.swap, egui::RichText::new("💾 Swap Memory (auto-sized)").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.lemp, egui::RichText::new("🌐 LEMP Stack (Nginx, MySQL, PHP)").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.devtools, egui::RichText::new("⚙️ Development Tools (Neovim, Node.js, Claude Code)").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.wordpress, egui::RichText::new("📝 WordPress CMS").size(14.0));
-                        ui.add_space(4.0);
-                        ui.checkbox(&mut self.config.certbot, egui::RichText::new("🔒 Certbot SSL/TLS Certificates").size(14.0));
-                    });
-
-                ui.add_space(18.0);
-
-                // Security Clusters
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(37, 41, 48, 200))
-                    .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgba_premultiplied(231, 76, 60, 100)))
-                    .rounding(14.0)
-                    .inner_margin(egui::vec2(22.0, 20.0))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 3.0),
-                        blur: 12.0,
-                        spread: 0.0,
-                        color: egui::Color32::from_black_alpha(60),
-                    })
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        
-                        ui.label(egui::RichText::new("🔒 Security Clusters")
-                            .size(20.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(231, 76, 60)));
-                        ui.add_space(12.0);
-
-                        ui.checkbox(&mut self.config.system_hardening, egui::RichText::new("🔐 System Hardening").size(14.0));
-                        ui.label(egui::RichText::new("   • Kernel hardening, secure shared memory")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.apparmor, egui::RichText::new("🛡️ AppArmor Enforcement").size(14.0));
-                        ui.label(egui::RichText::new("   • Mandatory access control")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.rootkit_detection, egui::RichText::new("🔍 Rootkit Detection (rkhunter)").size(14.0));
-                        ui.label(egui::RichText::new("   • Daily scans for malware")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.file_integrity, egui::RichText::new("📁 File Integrity Monitoring (AIDE)").size(14.0));
-                        ui.label(egui::RichText::new("   • Tracks unauthorized file changes")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.audit_logging, egui::RichText::new("📊 Audit Logging (auditd)").size(14.0));
-                        ui.label(egui::RichText::new("   • System call auditing")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.log_monitoring, egui::RichText::new("📋 Log Monitoring (Logwatch)").size(14.0));
-                        ui.label(egui::RichText::new("   • Daily log analysis reports")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                        ui.add_space(6.0);
-
-                        ui.checkbox(&mut self.config.advanced_protection, egui::RichText::new("🚀 Advanced Protection").size(14.0));
-                        ui.label(egui::RichText::new("   • 2FA, Backups, USB restrictions")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(154, 160, 166)));
-                    });
-
-                ui.add_space(18.0);
-
-                // Maintenance Settings
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(37, 41, 48, 200))
-                    .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgba_premultiplied(241, 196, 15, 100)))
-                    .rounding(14.0)
-                    .inner_margin(egui::vec2(22.0, 20.0))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 3.0),
-                        blur: 12.0,
-                        spread: 0.0,
-                        color: egui::Color32::from_black_alpha(60),
-                    })
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new("🔧 Maintenance Settings")
-                            .size(20.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(241, 196, 15)));
-                        ui.add_space(12.0);
-
-                        ui.checkbox(&mut self.config.cron_jobs, egui::RichText::new("⏰ Automated Updates & Cron Jobs").size(14.0));
-                        ui.add_space(6.0);
-                        ui.checkbox(&mut self.config.periodic_reboot, egui::RichText::new("🔄 Periodic System Reboot").size(14.0));
-
-                        if self.config.periodic_reboot {
-                            ui.add_space(10.0);
-                            
-                            egui::Frame::none()
-                                .fill(egui::Color32::from_rgba_premultiplied(241, 196, 15, 20))
-                                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(241, 196, 15, 100)))
-                                .rounding(8.0)
-                                .inner_margin(12.0)
-                                .show(ui, |ui| {
-                                    ui.label(egui::RichText::new("Reboot Schedule").size(13.0).color(egui::Color32::from_rgb(200, 200, 200)));
-                                    ui.add_space(6.0);
-                                    egui::ComboBox::from_id_source("reboot_hour")
-                                        .selected_text(egui::RichText::new(format_reboot_schedule(&self.config.reboot_hour)).size(13.0))
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            ui.selectable_value(&mut self.config.reboot_hour, "1".to_string(), "Daily at 1:00 AM");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "2".to_string(), "Daily at 2:00 AM");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "3".to_string(), "Daily at 3:00 AM");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "4".to_string(), "Daily at 4:00 AM");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "5".to_string(), "Daily at 5:00 AM");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "*/6".to_string(), "Every 6 hours");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "*/12".to_string(), "Every 12 hours");
-                                            ui.selectable_value(&mut self.config.reboot_hour, "*/24".to_string(), "Every 24 hours");
-                                        });
-                                });
-                        }
-                    });
-
-                ui.add_space(25.0);
-
-                // Launch Button with enhanced styling and glow
-                egui::Frame::none()
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 4.0),
-                        blur: 16.0,
-                        spread: 0.0,
-                        color: if self.provisioning {
-                            egui::Color32::from_rgba_premultiplied(52, 152, 219, 40)
-                        } else {
-                            egui::Color32::from_rgba_premultiplied(46, 204, 113, 40)
-                        },
-                    })
-                    .show(ui, |ui| {
-                        let button_text = if self.provisioning {
-                            "🔄 Provisioning..."
-                        } else {
-                            "🚀 Launch Provisioning"
-                        };
-
-                        let button_color = if self.provisioning {
-                            egui::Color32::from_rgb(52, 152, 219)
-                        } else {
-                            egui::Color32::from_rgb(46, 204, 113)
-                        };
-
-                        let button = egui::Button::new(egui::RichText::new(button_text).size(20.0).strong())
-                            .fill(button_color)
-                            .rounding(12.0)
-                            .min_size(egui::vec2(ui.available_width(), 56.0));
-
-                        let response = ui.add_enabled(!self.provisioning, button);
-                        
-                        if response.clicked() {
-                            self.launch_provisioning();
-                        }
-                        
-                        if response.hovered() && !self.provisioning {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        }
-                    });
-
-                ui.add_space(15.0);
-
-                // Output Display with terminal-like styling
-                if self.provisioning || !self.output_lines.is_empty() {
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgb(20, 25, 30))
-                        .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(93, 173, 226)))
-                        .rounding(12.0)
-                        .inner_margin(16.0)
-                        .shadow(egui::epaint::Shadow {
-                            offset: egui::vec2(0.0, 4.0),
-                            blur: 12.0,
-                            spread: 0.0,
-                            color: egui::Color32::from_black_alpha(60),
-                        })
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("📋 Provisioning Output")
-                                    .size(16.0)
-                                    .strong()
-                                    .color(egui::Color32::from_rgb(93, 173, 226)));
-                                if self.provisioning {
-                                    ui.spinner();
-                                }
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    // Open log file button
-                                    let open_btn = ui.add(egui::Button::new(
-                                        egui::RichText::new("📂 Open Log").size(12.0)
-                                    ).fill(egui::Color32::from_rgb(44, 62, 80)).rounding(6.0));
-                                    if open_btn.clicked() {
-                                        if let Ok(repo_root) = get_repo_root() {
-                                            let log_path = repo_root.join("provisioning.log");
-                                            let _ = std::process::Command::new("open")
-                                                .arg(&log_path)
-                                                .spawn();
-                                        }
-                                    }
-                                    // Copy button
-                                    let copy_btn = ui.add(egui::Button::new(
-                                        egui::RichText::new("📋 Copy Logs").size(12.0)
-                                    ).fill(egui::Color32::from_rgb(44, 62, 80)).rounding(6.0));
-                                    if copy_btn.clicked() {
-                                        let all_output = self.output_lines.join("\n");
-                                        ui.ctx().output_mut(|o| o.copied_text = all_output);
-                                    }
-                                });
-                            });
-                            ui.add_space(8.0);
-
-                            egui::ScrollArea::vertical()
-                                .max_height(600.0)
-                                .stick_to_bottom(true)
-                                .show(ui, |ui| {
-                                    for line in &self.output_lines {
-                                        let (color, bold) = ansible_line_style(line);
-                                        let mut text = egui::RichText::new(line)
-                                            .font(egui::FontId::monospace(11.0))
-                                            .color(color);
-                                        if bold {
-                                            text = text.strong();
-                                        }
-                                        ui.label(text);
-                                    }
-                                });
-                        });
-                    ui.add_space(15.0);
-                }
-
-                // Result Messages with enhanced styling
-                if let Some(msg) = &self.result_message {
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgba_premultiplied(46, 204, 113, 40))
-                        .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(46, 204, 113)))
-                        .rounding(12.0)
-                        .inner_margin(16.0)
-                        .shadow(egui::epaint::Shadow {
-                            offset: egui::vec2(0.0, 2.0),
-                            blur: 8.0,
-                            spread: 0.0,
-                            color: egui::Color32::from_black_alpha(40),
-                        })
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("✅ Success!")
-                                .size(18.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(46, 204, 113)));
-                            ui.add_space(4.0);
-                            ui.label(egui::RichText::new(msg).size(14.0));
-                        });
-                    ui.add_space(15.0);
-                }
-
-                if let Some(msg) = &self.error_message {
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgba_premultiplied(231, 76, 60, 40))
-                        .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(231, 76, 60)))
-                        .rounding(12.0)
-                        .inner_margin(16.0)
-                        .shadow(egui::epaint::Shadow {
-                            offset: egui::vec2(0.0, 2.0),
-                            blur: 8.0,
-                            spread: 0.0,
-                            color: egui::Color32::from_black_alpha(40),
-                        })
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("❌ Error")
-                                .size(18.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(231, 76, 60)));
-                            ui.add_space(8.0);
-                            egui::ScrollArea::vertical()
-                                .max_height(200.0)
-                                .show(ui, |ui| {
-                                    for line in msg.lines() {
-                                        let color = if line.contains("fatal:") || line.contains("FAILED!") {
-                                            egui::Color32::from_rgb(255, 100, 100)
-                                        } else if line.contains("ERROR") {
-                                            egui::Color32::from_rgb(231, 76, 60)
-                                        } else {
-                                            egui::Color32::from_rgb(220, 220, 220)
-                                        };
-                                        ui.label(egui::RichText::new(line)
-                                            .font(egui::FontId::monospace(11.0))
-                                            .color(color));
-                                    }
-                                });
-                        });
-                    ui.add_space(15.0);
-                }
-
-                // Footer
-                ui.separator();
-                ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new("💾 Settings are automatically saved and restored")
-                        .size(12.0)
-                        .color(egui::Color32::from_rgb(95, 99, 104)));
                 });
-
-                ui.add_space(20.0);
-                    }); // end vertical
-                }); // end horizontal centering
+                ui.add_space(2.0);
             });
-        });
+
+        // Sidebar
+        egui::SidePanel::left("nav_sidebar")
+            .resizable(false)
+            .exact_width(180.0)
+            .frame(egui::Frame::new()
+                .fill(macos_colors::SIDEBAR_BG)
+                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
+                .inner_margin(egui::vec2(8.0, 12.0)))
+            .show(ctx, |ui| {
+                let sections = [
+                    NavSection::Connection,
+                    NavSection::Features,
+                    NavSection::Security,
+                    NavSection::Maintenance,
+                    NavSection::Output,
+                ];
+
+                for section in sections {
+                    let selected = self.selected_section == section;
+
+                    // macOS sidebar row
+                    let desired_size = egui::vec2(ui.available_width(), 26.0);
+                    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+
+                    if selected {
+                        // macOS accent selection highlight
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::CornerRadius::same(5),
+                            macos_colors::SELECTED_CONTENT_BG,
+                        );
+                    } else if response.hovered() {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::CornerRadius::same(5),
+                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 10),
+                        );
+                    }
+
+                    ui.painter().text(
+                        egui::pos2(rect.left() + 10.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        section.label(),
+                        egui::FontId::proportional(13.0),
+                        if selected {
+                            macos_colors::LABEL_PRIMARY
+                        } else {
+                            macos_colors::LABEL_SECONDARY
+                        },
+                    );
+
+                    if response.clicked() {
+                        self.selected_section = section;
+                    }
+                }
+            });
+
+        // Detail pane
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new()
+                .fill(macos_colors::WINDOW_BG)
+                .inner_margin(egui::vec2(20.0, 16.0)))
+            .show(ctx, |ui| {
+                match self.selected_section {
+                    NavSection::Connection => self.render_connection(ui),
+                    NavSection::Features => self.render_features(ui),
+                    NavSection::Security => self.render_security(ui),
+                    NavSection::Maintenance => self.render_maintenance(ui),
+                    NavSection::Output => self.render_output(ui),
+                }
+            });
 
         // Request repaint for smooth updates
         if self.provisioning {
@@ -706,40 +719,49 @@ impl eframe::App for AnsibleProvisioningApp {
 }
 
 fn setup_custom_style(ctx: &egui::Context) {
+    // Start from egui's built-in dark theme
     let mut style = (*ctx.style()).clone();
-    
-    // Dark theme colors with gradient feel
-    style.visuals.dark_mode = true;
-    style.visuals.override_text_color = Some(egui::Color32::from_rgb(232, 234, 237));
-    style.visuals.panel_fill = egui::Color32::from_rgb(15, 20, 25);
-    style.visuals.window_fill = egui::Color32::from_rgb(15, 20, 25);
-    style.visuals.extreme_bg_color = egui::Color32::from_rgb(26, 30, 38);
-    
-    // Enhanced widget styling with better colors
-    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(42, 46, 54);
-    style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(35, 39, 46);
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(42, 46, 54);
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(35, 39, 46);
-    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(58, 65, 78);
-    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(50, 56, 66);
-    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(93, 173, 226);
-    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(73, 153, 206);
-    
-    // Rounded corners everywhere
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-    
-    // Better spacing and interaction
-    style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-    style.spacing.button_padding = egui::vec2(16.0, 10.0);
-    style.spacing.indent = 20.0;
-    style.spacing.interact_size = egui::vec2(50.0, 24.0);
-    
-    // Smooth animations
+    style.visuals = egui::Visuals::dark();
+
+    // macOS dark mode panel colors
+    style.visuals.panel_fill = macos_colors::WINDOW_BG;
+    style.visuals.window_fill = macos_colors::WINDOW_BG;
+    style.visuals.extreme_bg_color = macos_colors::TERMINAL_BG;
+
+    // Widget fills — standard macOS grouped background tones
+    style.visuals.widgets.noninteractive.bg_fill = macos_colors::GROUPED_BG;
+    style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(38, 38, 40);
+    style.visuals.widgets.inactive.bg_fill = macos_colors::GROUPED_BG;
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(38, 38, 40);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(58, 58, 60);
+    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(50, 50, 52);
+    style.visuals.widgets.active.bg_fill = macos_colors::ACCENT_BLUE;
+    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(0, 112, 235);
+
+    // macOS-standard rounding (6px — Settings/Finder style)
+    let macos_rounding = egui::CornerRadius::same(6);
+    style.visuals.widgets.noninteractive.corner_radius = macos_rounding;
+    style.visuals.widgets.inactive.corner_radius = macos_rounding;
+    style.visuals.widgets.hovered.corner_radius = macos_rounding;
+    style.visuals.widgets.active.corner_radius = macos_rounding;
+
+    // Compact macOS density
+    style.spacing.item_spacing = egui::vec2(8.0, 4.0);
+    style.spacing.button_padding = egui::vec2(12.0, 6.0);
+    style.spacing.indent = 16.0;
+    style.spacing.interact_size = egui::vec2(40.0, 20.0);
+
+    // Standard dark mode shadows
+    style.visuals.popup_shadow = egui::Shadow {
+        offset: [0, 2],
+        blur: 8,
+        spread: 0,
+        color: egui::Color32::from_rgba_premultiplied(0, 0, 0, 60),
+    };
+    style.visuals.window_shadow = egui::Shadow::NONE;
+
     style.animation_time = 0.15;
-    
+
     ctx.set_style(style);
 }
 
@@ -786,21 +808,21 @@ fn save_cache(config: &ProvisioningConfig) -> Result<(), String> {
 fn get_repo_root() -> Result<PathBuf, String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get executable path: {}", e))?;
-    
+
     let mut current = exe_path.parent().ok_or("No parent directory")?;
-    
+
     loop {
         let playbook_path = current.join("playbook.yml");
         if playbook_path.exists() {
             return Ok(current.to_path_buf());
         }
-        
+
         match current.parent() {
             Some(parent) => current = parent,
             None => break,
         }
     }
-    
+
     std::env::current_dir()
         .map_err(|e| format!("Could not find repository root: {}", e))
 }
@@ -817,72 +839,72 @@ fn is_timing_only_line(s: &str) -> bool {
             && s.contains("(0:") && s.ends_with("*******")
 }
 
-/// Returns (color, bold) matching ansible's native terminal colors
+/// Returns (color, bold) matching macOS system colors for ansible output
 fn ansible_line_style(line: &str) -> (egui::Color32, bool) {
     let trimmed = line.trim();
 
     // --- Red / errors ---
     if trimmed.starts_with("fatal:") || trimmed.contains("FAILED!") {
-        return (egui::Color32::from_rgb(255, 75, 75), true);       // bright red, bold
+        return (macos_colors::SYSTEM_RED, true);
     }
     if trimmed.contains("ERROR") || trimmed.starts_with("ERROR:") {
-        return (egui::Color32::from_rgb(231, 76, 60), true);       // red
+        return (macos_colors::SYSTEM_RED, true);
     }
     if trimmed.contains("UNREACHABLE!") || trimmed.contains("unreachable=") {
-        return (egui::Color32::from_rgb(255, 85, 85), true);       // bright red
+        return (macos_colors::SYSTEM_RED, true);
     }
 
     // --- Yellow / changed ---
     if trimmed.starts_with("changed:") || trimmed.contains("changed:") {
-        return (egui::Color32::from_rgb(241, 196, 15), false);     // yellow
+        return (macos_colors::SYSTEM_YELLOW, false);
     }
     if trimmed.contains("[WARNING]") || trimmed.starts_with("WARNING") || trimmed.starts_with("[DEPRECATION") {
-        return (egui::Color32::from_rgb(230, 175, 46), false);     // bright yellow/orange
+        return (macos_colors::SYSTEM_ORANGE, false);
     }
 
     // --- Green / ok ---
     if trimmed.starts_with("ok:") || trimmed.contains("ok:") {
-        return (egui::Color32::from_rgb(46, 204, 113), false);     // green
+        return (macos_colors::SYSTEM_GREEN, false);
     }
     if trimmed.contains("SUCCESS") || trimmed.contains("PROVISIONING COMPLETED") {
-        return (egui::Color32::from_rgb(46, 204, 113), true);      // green bold
+        return (macos_colors::SYSTEM_GREEN, true);
     }
 
     // --- Cyan / skipped ---
     if trimmed.starts_with("skipping:") || trimmed.contains("skipping:") {
-        return (egui::Color32::from_rgb(86, 204, 242), false);     // cyan
+        return (macos_colors::SYSTEM_CYAN, false);
     }
     if trimmed.starts_with("included:") {
-        return (egui::Color32::from_rgb(86, 204, 242), false);     // cyan
+        return (macos_colors::SYSTEM_CYAN, false);
     }
 
     // --- Bold white / structural ---
     if trimmed.starts_with("PLAY [") || trimmed.starts_with("PLAY RECAP") {
-        return (egui::Color32::from_rgb(255, 255, 255), true);     // bold white
+        return (macos_colors::LABEL_PRIMARY, true);
     }
     if trimmed.starts_with("TASK [") {
-        return (egui::Color32::from_rgb(93, 173, 226), true);      // bold blue
+        return (macos_colors::ACCENT_BLUE, true);
     }
     if trimmed.starts_with("RUNNING HANDLER") {
-        return (egui::Color32::from_rgb(93, 173, 226), true);      // bold blue
+        return (macos_colors::ACCENT_BLUE, true);
     }
 
     // --- Purple / recap stats ---
     if trimmed.contains("ok=") && trimmed.contains("changed=") {
-        return (egui::Color32::from_rgb(187, 143, 206), false);    // purple (recap line)
+        return (macos_colors::SYSTEM_PURPLE, false);
     }
 
     // --- Dim gray / timing & separators ---
     if trimmed.contains("0:00:") || trimmed.starts_with("====") || trimmed.starts_with("----") {
-        return (egui::Color32::from_rgb(120, 120, 120), false);    // dim gray
+        return (macos_colors::LABEL_TERTIARY, false);
     }
     if trimmed.starts_with("Playbook run took") || trimmed.starts_with("TASKS RECAP") || trimmed.starts_with("PLAYBOOK RECAP") {
-        return (egui::Color32::from_rgb(160, 160, 160), true);     // light gray bold
+        return (macos_colors::LABEL_SECONDARY, true);
     }
 
     // --- Log file line ---
     if trimmed.starts_with("Log file:") {
-        return (egui::Color32::from_rgb(120, 144, 156), false);    // muted blue-gray
+        return (macos_colors::LABEL_TERTIARY, false);
     }
 
     // --- Default ---
@@ -1470,15 +1492,16 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([920.0, 800.0])
-            .with_title("Ansible Provisioning Dashboard"),
+            .with_inner_size([860.0, 580.0])
+            .with_min_inner_size([700.0, 450.0])
+            .with_title("Rustsible"),
         ..Default::default()
     };
 
     let term_signal_clone = Arc::clone(&term_signal);
     eframe::run_native(
-        "Ansible Provisioning Dashboard",
+        "Rustsible",
         options,
-        Box::new(move |cc| Box::new(AnsibleProvisioningApp::new(cc, term_signal_clone))),
+        Box::new(move |cc| Ok(Box::new(AnsibleProvisioningApp::new(cc, term_signal_clone)))),
     )
 }
