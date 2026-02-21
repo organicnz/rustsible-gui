@@ -1,0 +1,21 @@
+[package]
+name = "rustsible-gui"
+version = "0.1.0"
+edition = "2021"
+authors = ["organicnz"]
+description = "Pure Rust GUI for Ansible server provisioning"
+repository = "https://github.com/organicnz/rustsible-gui"
+
+[dependencies]
+eframe = "0.27"
+egui = "0.27"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+dirs = "5"
+sysinfo = "0.30"
+signal-hook = "0.3"
+regex = "1"
+
+[patch.crates-io]
+winit = { git = "https://github.com/rust-windowing/winit", tag = "v0.30.0" }

@@ -165,13 +165,19 @@
         - docker-repo
         - apt-update
 
+    - name: "Docker Repository | Detect system architecture for Docker repo"
+      ansible.builtin.set_fact:
+        docker_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+      tags:
+        - docker-repo
+
     - name: "Docker Repository | Add Docker APT repository with GPG verification"
       # Adds official Docker repository for Ubuntu.
       # Uses signed-by to associate GPG key with this specific repository.
-      # Architecture: Uses amd64 explicitly (modify for ARM/other architectures).
+      # Architecture: Auto-detected (amd64 or arm64).
       # Distribution: Uses ansible_distribution_release (focal, jammy, noble, etc.)
       apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
         filename: docker
         update_cache: yes
@@ -238,12 +244,15 @@
     # -------------------------------------------------------------------------
     # Installs Docker Compose for multi-container applications.
 
+    - name: "Docker Compose | Detect compose architecture"
+      ansible.builtin.set_fact:
+        compose_arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+      tags:
+        - docker-compose
+
     - name: "Docker Compose | Install specific version of Docker Compose"
-      # Downloads specific Docker Compose version from GitHub releases.
-      # Used when docker_compose_version is defined and not "latest".
-      # Version format: v2.24.0, v2.23.3, etc.
       ansible.builtin.get_url:
-        url: "https://github.com/docker/compose/releases/{{ docker_compose_version }}/download/docker-compose-Linux-x86_64"
+        url: "https://github.com/docker/compose/releases/{{ docker_compose_version }}/download/docker-compose-Linux-{{ compose_arch }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
       when: docker_compose_version is defined and docker_compose_version != "latest"
@@ -252,11 +261,8 @@
         - compose-install
 
     - name: "Docker Compose | Install latest Docker Compose"
-      # Downloads latest Docker Compose version from GitHub.
-      # Used when docker_compose_version is undefined or set to "latest".
-      # GitHub redirects to actual latest release automatically.
       ansible.builtin.get_url:
-        url: https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-{{ compose_arch }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
       when: docker_compose_version is not defined or docker_compose_version == "latest"

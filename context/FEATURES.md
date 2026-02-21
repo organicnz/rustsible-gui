@@ -2,6 +2,8 @@
 
 This document provides a comprehensive catalog of all features and capabilities in the Ansible Ubuntu Server Provisioning playbook.
 
+**Interfaces**: Pure Rust GUI (egui) - ~2MB binary with real-time streaming, or CLI with beautified prompts.
+
 ## Feature Status Legend
 
 - **Stable**: Production-ready, fully tested

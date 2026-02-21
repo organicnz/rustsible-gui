@@ -13,8 +13,8 @@
   connection: local
   gather_facts: false
 
-  # NOTE: vars_prompt removed to support GUI/CLI launchers
-  # All variables are now passed via -e flags from run_gui.py or run_interactive.py
+  # NOTE: vars_prompt removed to support GUI launcher
+  # All variables are now passed via -e flags from the Tauri GUI or command line
   # Required variables: target_ip, target_user, ssh_key_path
   # Feature flags: prompt_enable_fail2ban, prompt_install_docker, etc.
 

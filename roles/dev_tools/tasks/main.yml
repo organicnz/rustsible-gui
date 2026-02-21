@@ -70,7 +70,7 @@
       # Uses become: false to create as the ansible_user, not root.
       # XDG Base Directory specification compliance.
       ansible.builtin.file:
-        path: "{{ ansible_env.HOME }}/.config"
+        path: "/home/{{ ansible_user }}/.config"
         state: directory
         mode: '0755'
       become: false
@@ -91,7 +91,7 @@
       # Force: yes ensures clean state on subsequent runs
       ansible.builtin.git:
         repo: https://github.com/nvim-lua/kickstart.nvim.git
-        dest: "{{ ansible_env.HOME }}/.config/nvim"
+        dest: "/home/{{ ansible_user }}/.config/nvim"
         version: master
         force: yes
       become: false
@@ -105,7 +105,7 @@
       # Prevents permission issues when Neovim tries to write plugins/cache.
       # Recursive: yes ensures all subdirectories are also updated.
       ansible.builtin.file:
-        path: "{{ ansible_env.HOME }}/.config/nvim"
+        path: "/home/{{ ansible_user }}/.config/nvim"
         state: directory
         recurse: yes
         owner: "{{ ansible_user }}"

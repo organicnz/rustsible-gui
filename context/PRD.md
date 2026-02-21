@@ -12,6 +12,8 @@
 
 This Ansible playbook repository provides automated, repeatable, and secure provisioning of Ubuntu servers with comprehensive security hardening, container runtime support, and optional web hosting capabilities. The solution enables infrastructure teams to deploy production-ready servers in minutes rather than hours, with built-in security best practices and zero-touch automation.
 
+**Interface Options**: Pure Rust GUI (egui) for blazing fast performance (~2MB binary) or traditional CLI with beautified prompts.
+
 ### Key Value Propositions
 
 - **Rapid Deployment**: Fresh Ubuntu server to production-ready in 8-20 minutes

@@ -4,492 +4,1229 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a comprehensive Ansible playbook repository for automated Ubuntu server provisioning with a full LEMP stack, WordPress deployment, SSL/TLS automation, Docker containers, development tools, and enterprise-grade security hardening. It uses a modular role-based architecture for complete server provisioning from bare metal to production-ready web applications.
+This is a cross-platform desktop application built with **Tauri**, **Svelte**, and **Rust**, providing a modern, secure, and performant native desktop experience. The project leverages Rust's safety and performance for the backend, Svelte's reactive UI framework for the frontend, and Tauri's lightweight webview for cross-platform deployment.
 
 **Key Capabilities:**
-- Base system setup with security hardening and fail2ban intrusion prevention
-- Docker containerization platform with Compose support
-- Complete LEMP stack (Linux, Nginx, MySQL, PHP-FPM)
-- Production-ready WordPress deployment with optimized configuration
-- Automated SSL/TLS certificate management with Let's Encrypt
-- Development tools (Neovim with kickstart, Node.js, Claude Code)
-- Intelligent swap configuration based on available RAM
-- Automated system maintenance with cron jobs and unattended upgrades
+- Cross-platform desktop application (Windows, macOS, Linux)
+- Rust backend with type safety and memory safety guarantees
+- Svelte frontend with reactive, component-based UI
+- Tauri's lightweight webview (no Electron overhead)
+- Native system integration and file access
+- Small binary size with optimized builds (typically 3-10 MB)
+- Secure inter-process communication between frontend and backend
+- Auto-update capabilities for seamless deployment
+
+**Technology Stack:**
+- **Backend**: Rust with Tauri
+- **Frontend**: Svelte 4/5 with TypeScript
+- **Build Tool**: Vite
+- **Styling**: CSS/SCSS or Tailwind CSS
+- **State Management**: Svelte stores
+- **Testing**: Vitest + Svelte Testing Library (frontend), cargo test (backend)
 
 ## Critical Configuration Files
 
-### Inventory and Variables
-- `inventory.ini`: Defines target servers under `[webservers]` group with SSH connection details
-- `vars/default.yml`: Central configuration for all playbook variables (user, security settings, packages, Docker, etc.)
-- `ansible.cfg`: Sets `inventory.ini` as default inventory and disables host key checking
+### Tauri Configuration
+- `src-tauri/tauri.conf.json`: Main Tauri configuration (app metadata, build settings, security policies)
+- `src-tauri/Cargo.toml`: Rust dependencies and project metadata
+- `src-tauri/src/main.rs`: Rust backend entry point with Tauri commands
+- `src-tauri/build.rs`: Build script for compile-time tasks
 
-### Variable Structure
-The `vars/default.yml` file contains:
-- **Server Configuration**: `ip_address`, `added_user`, `user_password`, `copy_local_key`
-- **System Packages**: `sys_packages` list (curl, vim, git, ufw, htop, tmux, etc.)
-- **Timezone**: `system_timezone` (default: America/Los_Angeles)
-- **Security**: `ssh_port`, `disable_root_login`, `password_authentication`
-- **Firewall**: `ufw_allowed_ports` (list of port/proto dicts)
-- **Fail2ban**: `fail2ban_bantime`, `fail2ban_findtime`, `fail2ban_maxretry`
-- **Docker**: `install_docker`, `docker_users`, `docker_compose_version`
-- **LEMP Stack**: `install_lemp`, `php_modules` list
-- **Swap**: `enable_swap` (auto-sizes based on RAM)
-- **Cron Jobs**: `enable_cron_jobs`, `enable_unattended_upgrades`, `enable_auto_updates`, `enable_periodic_reboot`
-- **Development Tools**: `install_dev_tools`, `install_neovim`, `install_nodejs`, `install_claude_code`, `nodejs_version`
-- **Monitoring**: `install_monitoring` (future feature)
-- **WordPress**: `install_wordpress`, `configure_nginx_vhost`, `full_domain`, `http_host`, MySQL credentials
-- **Certbot SSL/TLS**: `install_certbot`, `certbot_email`, `certbot_www_domain`, `certbot_auto_renew`
+### Frontend Configuration (Svelte)
+- `package.json`: Frontend dependencies and build scripts
+- `vite.config.ts`: Vite configuration with Svelte plugin
+- `svelte.config.js`: Svelte compiler options
+- `tsconfig.json`: TypeScript compiler configuration
+- `index.html`: Application entry point
+- `src/App.svelte`: Root Svelte component
 
-## Role Architecture
+### Project Structure
+```
+.
+├── src/                          # Svelte frontend source code
+│   ├── lib/                      # Reusable components and utilities
+│   │   ├── components/           # Svelte components
+│   │   ├── stores/              # Svelte stores for state management
+│   │   ├── utils/               # Utility functions
+│   │   └── types/               # TypeScript type definitions
+│   ├── routes/                   # SvelteKit routes (if using SvelteKit)
+│   ├── App.svelte               # Root component
+│   ├── main.ts                  # Frontend entry point
+│   └── app.css                  # Global styles
+├── src-tauri/                    # Rust backend
+│   ├── src/
+│   │   ├── main.rs              # Tauri app initialization
+│   │   ├── commands.rs          # Backend command handlers
+│   │   ├── state.rs             # Application state management
+│   │   ├── events.rs            # Event emitters
+│   │   └── lib.rs               # Shared library code
+│   ├── Cargo.toml               # Rust dependencies
+│   ├── tauri.conf.json          # Tauri configuration
+│   └── icons/                   # Application icons
+├── public/                       # Static assets
+├── dist/                         # Build output (generated)
+└── static/                       # Static files served by Vite
+```
 
-The playbook uses 10 roles executed in specific order:
+## Tauri Configuration Reference
 
-### Core Roles (Always Execute)
-1. **base_setup**: User creation, sudo configuration, package installation, timezone setup
-2. **swap**: Intelligent swap file creation with automatic sizing based on RAM
-3. **security**: SSH hardening, UFW firewall, system hardening, optional DDOS protection
-4. **oefenweb.fail2ban**: External role for fail2ban intrusion prevention (community role)
+### tauri.conf.json Key Sections
 
-### Optional Roles (Conditional Execution)
-5. **docker**: Docker CE and Docker Compose installation with security configurations
-   - Conditional: `when: install_docker | bool`
+**Build Configuration:**
+```json
+{
+  "build": {
+    "distDir": "../dist",
+    "devPath": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  }
+}
+```
 
-6. **lemp**: Nginx, MySQL/MariaDB, PHP-FPM with security hardening
-   - Conditional: `when: install_lemp | default(false) | bool`
-   - Installs complete web server stack with PHP modules
+**Application Metadata:**
+- `package.productName`: Application display name
+- `package.version`: Semantic version (synced with Cargo.toml)
+- `tauri.bundle.identifier`: Unique app identifier (e.g., `com.yourcompany.appname`)
+- `tauri.bundle.icon`: Icon paths for different platforms
 
-7. **cron_jobs**: Automated system maintenance and security updates
-   - Conditional: `when: enable_cron_jobs | default(true) | bool`
-   - Includes unattended upgrades, system cleanup, optional periodic reboots
+**Security Configuration:**
+- `tauri.allowlist`: Fine-grained permissions for Tauri APIs
+- `tauri.security.csp`: Content Security Policy for webview
+- `tauri.windows.*.fileDropEnabled`: Drag-and-drop file handling
 
-8. **dev_tools**: Development environment (Neovim, Node.js, Claude Code)
-   - Conditional: `when: install_dev_tools | default(false) | bool`
-   - Configurable Node.js version, optional Claude Code CLI
-
-9. **wordpress**: Production-ready WordPress deployment with database setup
-   - Conditional: `when: install_wordpress | default(false) | bool`
-   - Requires LEMP stack to be installed first
-   - Creates database, configures wp-config.php, sets security permissions
-
-10. **certbot**: Automated SSL/TLS certificates with Let's Encrypt
-    - Conditional: `when: install_certbot | default(false) | bool`
-    - Requires Nginx to be installed
-    - Includes automatic certificate renewal
-
-### Role Dependencies
-- **security** depends on **base_setup** (user must exist before SSH hardening)
-- **wordpress** depends on **lemp** (requires MySQL and Nginx)
-- **certbot** depends on **lemp** or Nginx (requires web server for certificate validation)
-- **swap** executes early to ensure adequate memory for subsequent operations
-- All roles use variables from `vars/default.yml` for consistent configuration
-
-### Pre-tasks and Post-tasks
-- **Pre-tasks**: Clean Docker repository conflicts, update apt cache, ensure fail2ban is installed
-- **Post-tasks**: Check for required reboots (checks `/var/run/reboot-required`), reboot is tagged with `never` and `reboot`
+**Window Configuration:**
+```json
+{
+  "tauri": {
+    "windows": [{
+      "title": "App Name",
+      "width": 1200,
+      "height": 800,
+      "resizable": true,
+      "fullscreen": false,
+      "decorations": true,
+      "transparent": false
+    }]
+  }
+}
+```
 
 ## Common Commands
 
-### Running the Playbook
+### Development Workflow
 
-**Interactive Mode** (recommended - prompts for all connection details):
+**Start Development Server:**
 ```bash
-# The playbook will prompt for:
-#   1. Server IP address
-#   2. SSH username (default: root)
-#   3. SSH key path (default: ~/.ssh/id_rsa_gitlab)
+# Runs Vite dev server + Rust backend with hot reload
+npm run tauri dev
 
-ansible-playbook playbook.yml
-
-# Example prompts:
-# Enter the server IP address: 152.53.136.84
-# Enter SSH username (default: root): organic
-# Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab): ~/.ssh/id_rsa
-
-# Or just press Enter to accept defaults for username and key path:
-# Enter the server IP address: 152.53.136.84
-# Enter SSH username (default: root): [press Enter]
-# Enter path to SSH private key (default: ~/.ssh/id_rsa_gitlab): [press Enter]
+# Or using cargo directly
+cd src-tauri && cargo tauri dev
 ```
 
-**Non-Interactive Mode** (for automation - no prompts):
+**Build for Production:**
 ```bash
-# Skip all prompts by providing values via -e flags
-ansible-playbook playbook.yml \
-  -e "target_ip=152.53.136.84" \
-  -e "target_user=root" \
-  -e "ssh_key_path=~/.ssh/id_rsa_gitlab"
+# Creates optimized production build for current platform
+npm run tauri build
 
-# For CI/CD pipelines, you can also use environment variables
+# Build with specific features
+cargo tauri build --features custom-feature
+
+# Build for release with debugging symbols stripped
+cargo tauri build --release
 ```
 
-**Note**: The playbook dynamically builds the inventory based on your inputs. No need to edit `inventory.ini` for interactive usage. The IP address is used for SSH connection and fail2ban whitelist configuration.
-
-### Tag-based Execution
-
-Run only security tasks:
+**Frontend Only Development:**
 ```bash
-ansible-playbook playbook.yml -t security -l webservers -i inventory.ini -u organic --ask-become-pass
+# Start Vite dev server without Tauri (useful for UI work)
+npm run dev
+
+# Build frontend only
+npm run build
 ```
 
-Run only Docker installation:
+### Testing
+
+**Run Rust Tests:**
 ```bash
-ansible-playbook playbook.yml -t docker -l webservers -i inventory.ini -u organic --ask-become-pass
+cd src-tauri
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run with output
+cargo test -- --nocapture
+
+# Run with code coverage
+cargo tarpaulin --out Html
 ```
 
-Available tags: `base`, `setup`, `security`, `ssh`, `firewall`, `fail2ban`, `docker`, `lemp`, `web`, `nginx`, `mysql`, `php`, `swap`, `cron`, `automation`, `dev`, `development`, `neovim`, `nodejs`, `claude`, `wordpress`, `cms`, `certbot`, `ssl`, `packages`, `user`, `system`, `reboot`
-
-### Testing and Validation
-
-Syntax check:
+**Run Svelte Frontend Tests:**
 ```bash
-ansible-playbook playbook.yml --syntax-check
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Run in watch mode
+npm run test:watch
+
+# Run specific test file
+npm test -- ComponentName
 ```
 
-Dry run (check mode):
+**Lint and Format:**
 ```bash
-ansible-playbook playbook.yml -l webservers -i inventory.ini -u organic --ask-become-pass --check
+# Rust formatting and linting
+cd src-tauri
+cargo fmt --check
+cargo clippy -- -D warnings
+
+# Svelte/TypeScript linting
+npm run lint
+npm run format
+
+# Check Svelte component syntax
+npm run check
 ```
 
-Lint playbook (requires ansible-lint):
+### Platform-Specific Builds
+
+**macOS:**
 ```bash
-ansible-lint playbook.yml
+# Universal binary (Apple Silicon + Intel)
+npm run tauri build -- --target universal-apple-darwin
+
+# Code signing (requires Apple Developer account)
+npm run tauri build -- --bundles app,dmg
+
+# Notarize for macOS distribution
+npm run tauri build -- --sign
 ```
 
-### SSH Troubleshooting
-
-Add SSH keys to agent:
+**Windows:**
 ```bash
-eval 'ssh-agent' && ssh-add ~/.ssh/azure_id_rsa.pem
-eval 'ssh-agent' && ssh-add ~/.ssh/id_rsa_gitlab
+# Build MSI installer
+npm run tauri build -- --bundles msi
+
+# Build NSIS installer
+npm run tauri build -- --bundles nsis
+
+# Build both
+npm run tauri build -- --bundles msi,nsis
+```
+
+**Linux:**
+```bash
+# Build AppImage
+npm run tauri build -- --bundles appimage
+
+# Build .deb package (Debian/Ubuntu)
+npm run tauri build -- --bundles deb
+
+# Build .rpm package (Fedora/RHEL)
+npm run tauri build -- --bundles rpm
 ```
 
 ## Architecture Patterns
 
-### Idempotency
-All tasks are designed to be idempotent. The playbook can be run multiple times without side effects.
+### Tauri Commands (IPC)
+
+Commands are the primary way for Svelte frontend to communicate with the Rust backend:
+
+**Rust Backend (src-tauri/src/commands.rs):**
+```rust
+#[tauri::command]
+async fn read_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn greet(name: String) -> String {
+    format!("Hello, {}!", name)
+}
+
+// Register in main.rs
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![read_file, greet])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+**Svelte Frontend Invocation:**
+```svelte
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/tauri';
+  import { onMount } from 'svelte';
+
+  let greeting = '';
+  let fileContent = '';
+
+  async function loadGreeting() {
+    greeting = await invoke<string>('greet', { name: 'World' });
+  }
+
+  async function loadFile() {
+    try {
+      fileContent = await invoke<string>('read_file', {
+        path: '/path/to/file.txt'
+      });
+    } catch (error) {
+      console.error('Failed to read file:', error);
+    }
+  }
+
+  onMount(() => {
+    loadGreeting();
+  });
+</script>
+
+<main>
+  <h1>{greeting}</h1>
+  <button on:click={loadFile}>Load File</button>
+  <pre>{fileContent}</pre>
+</main>
+```
+
+### State Management with Svelte Stores
+
+**Rust State Management:**
+```rust
+// src-tauri/src/state.rs
+use tauri::State;
+use std::sync::Mutex;
+
+pub struct AppState {
+    pub counter: Mutex<i32>,
+    pub user_data: Mutex<Option<String>>,
+}
+
+// src-tauri/src/commands.rs
+#[tauri::command]
+fn increment(state: State<AppState>) -> i32 {
+    let mut counter = state.counter.lock().unwrap();
+    *counter += 1;
+    *counter
+}
+
+#[tauri::command]
+fn get_counter(state: State<AppState>) -> i32 {
+    *state.counter.lock().unwrap()
+}
+
+// src-tauri/src/main.rs
+fn main() {
+    tauri::Builder::default()
+        .manage(AppState {
+            counter: Mutex::new(0),
+            user_data: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![increment, get_counter])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+**Svelte Store Pattern (src/lib/stores/counter.ts):**
+```typescript
+import { writable, derived } from 'svelte/store';
+import { invoke } from '@tauri-apps/api/tauri';
+
+function createCounter() {
+  const { subscribe, set, update } = writable(0);
+
+  return {
+    subscribe,
+    increment: async () => {
+      const newValue = await invoke<number>('increment');
+      set(newValue);
+    },
+    reset: () => set(0),
+    load: async () => {
+      const value = await invoke<number>('get_counter');
+      set(value);
+    }
+  };
+}
+
+export const counter = createCounter();
+
+// Derived store example
+export const doubleCounter = derived(
+  counter,
+  $counter => $counter * 2
+);
+```
+
+**Using Stores in Svelte Components:**
+```svelte
+<script lang="ts">
+  import { counter, doubleCounter } from '$lib/stores/counter';
+  import { onMount } from 'svelte';
+
+  onMount(() => {
+    counter.load();
+  });
+</script>
+
+<div>
+  <p>Counter: {$counter}</p>
+  <p>Double: {$doubleCounter}</p>
+  <button on:click={() => counter.increment()}>Increment</button>
+  <button on:click={() => counter.reset()}>Reset</button>
+</div>
+```
 
 ### Error Handling
-- Docker role uses `block:`/`rescue:` pattern for installation failures
-- Security role uses `rescue:` for system hardening failures
-- Failed tasks display helpful debug messages
 
-### Handlers
-Handlers are used for service restarts to avoid unnecessary service disruptions:
-- SSH configuration changes trigger `restart ssh` handler
-- Fail2ban changes trigger `restart fail2ban` handler
-- Docker daemon config changes trigger `restart docker` handler
+**Rust Error Handling Pattern:**
+```rust
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-### Repository Conflict Resolution
-The playbook includes pre-tasks and tasks to handle Docker repository conflicts:
-- Cleans existing Docker GPG keys from multiple locations
-- Removes old repository files
-- Uses `signed-by` option in apt repository configuration
-- Places GPG key in `/etc/apt/keyrings/docker.asc`
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum AppError {
+    #[error("File not found: {0}")]
+    FileNotFound(String),
 
-### Security Hardening
-Security role implements:
-- SSH hardening: Disables password auth and root login based on variables
-- UFW firewall: Default deny with explicit allow rules
-- Password policies: PAM configuration for strong passwords
-- Proper file permissions on cron directories
-- Docker daemon security: Disables userland proxy, enables no-new-privileges
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 
-### User Management Pattern
-Creates non-root user with:
-- SSH key-based authentication
-- Passwordless sudo via wheel group
-- Addition to Docker group (if Docker is installed)
-- Password hash stored securely
+    #[error("IO error: {0}")]
+    Io(String),
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::Io(err.to_string())
+    }
+}
+
+#[tauri::command]
+async fn safe_operation(path: String) -> Result<String, AppError> {
+    if path.is_empty() {
+        return Err(AppError::InvalidInput("Path cannot be empty".to_string()));
+    }
+
+    let content = std::fs::read_to_string(&path)
+        .map_err(|_| AppError::FileNotFound(path))?;
+
+    Ok(content)
+}
+```
+
+**Svelte Error Handling:**
+```svelte
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/tauri';
+
+  let error: string | null = null;
+  let content = '';
+
+  async function loadFile(path: string) {
+    error = null;
+    try {
+      content = await invoke<string>('safe_operation', { path });
+    } catch (err) {
+      error = err as string;
+      console.error('Operation failed:', err);
+    }
+  }
+</script>
+
+{#if error}
+  <div class="error">
+    Error: {error}
+  </div>
+{/if}
+
+{#if content}
+  <pre>{content}</pre>
+{/if}
+```
+
+### Event System
+
+**Emit Events from Rust:**
+```rust
+use tauri::Manager;
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+struct ProgressPayload {
+    percentage: u32,
+    message: String,
+}
+
+#[tauri::command]
+async fn long_running_task(app: tauri::AppHandle) -> Result<(), String> {
+    // Emit progress updates
+    app.emit_all("task_progress", ProgressPayload {
+        percentage: 25,
+        message: "Starting...".to_string(),
+    }).unwrap();
+
+    // Simulate work
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+    app.emit_all("task_progress", ProgressPayload {
+        percentage: 100,
+        message: "Complete!".to_string(),
+    }).unwrap();
+
+    Ok(())
+}
+```
+
+**Listen to Events in Svelte:**
+```svelte
+<script lang="ts">
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { onMount, onDestroy } from 'svelte';
+
+  interface ProgressPayload {
+    percentage: number;
+    message: string;
+  }
+
+  let progress = 0;
+  let message = '';
+  let unlisten: UnlistenFn | null = null;
+
+  onMount(async () => {
+    unlisten = await listen<ProgressPayload>('task_progress', (event) => {
+      progress = event.payload.percentage;
+      message = event.payload.message;
+    });
+  });
+
+  onDestroy(() => {
+    if (unlisten) unlisten();
+  });
+</script>
+
+<div>
+  <div class="progress-bar" style="width: {progress}%"></div>
+  <p>{message} - {progress}%</p>
+</div>
+```
+
+### File System Access
+
+**Secure File Operations (Rust):**
+```rust
+use tauri::api::path::{download_dir, app_data_dir};
+
+#[tauri::command]
+async fn save_to_downloads(
+    content: String,
+    filename: String,
+) -> Result<String, String> {
+    let downloads = download_dir()
+        .ok_or("Could not find downloads directory")?;
+
+    let path = downloads.join(filename);
+    std::fs::write(&path, content)
+        .map_err(|e| e.to_string())?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn read_app_data(
+    filename: String,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let app_data = app_data_dir(&app.config())
+        .ok_or("Could not find app data directory")?;
+
+    let path = app_data.join(filename);
+    std::fs::read_to_string(path)
+        .map_err(|e| e.to_string())
+}
+```
+
+**File Dialogs in Svelte:**
+```svelte
+<script lang="ts">
+  import { open, save } from '@tauri-apps/api/dialog';
+  import { readTextFile, writeTextFile } from '@tauri-apps/api/fs';
+
+  let content = '';
+
+  async function openFile() {
+    const selected = await open({
+      multiple: false,
+      filters: [{
+        name: 'Text Files',
+        extensions: ['txt', 'md', 'json']
+      }]
+    });
+
+    if (selected && typeof selected === 'string') {
+      content = await readTextFile(selected);
+    }
+  }
+
+  async function saveFile() {
+    const filePath = await save({
+      filters: [{
+        name: 'Text File',
+        extensions: ['txt']
+      }]
+    });
+
+    if (filePath) {
+      await writeTextFile(filePath, content);
+    }
+  }
+</script>
+
+<button on:click={openFile}>Open File</button>
+<button on:click={saveFile}>Save File</button>
+<textarea bind:value={content}></textarea>
+```
 
 ## Development Guidelines
 
-### Ansible Best Practices (from .cursor/rules)
-- Follow idempotent design principles
-- Use `group_vars` and `host_vars` for environment-specific configs
-- Validate with `ansible-lint` before running
-- Use handlers for service restarts
-- Apply variables securely with Ansible Vault for sensitive data
-- Use `block:` and `rescue:` for error handling
-- Implement tags for flexible execution
-- Use Jinja2 templates for dynamic configurations
+### Rust Best Practices
 
-### Variable Management
-- All configurable settings should be in `vars/default.yml`
-- Sensitive data (passwords, keys) should use `lookup()` from local files
-- Use descriptive variable names following snake_case convention
-- Document variable purpose in comments
+**Code Organization:**
+- Separate concerns into modules (`commands.rs`, `state.rs`, `events.rs`, `utils.rs`)
+- Use `lib.rs` for shared code between main app and tests
+- Keep `main.rs` minimal - mainly for app initialization
+- Use feature flags for conditional compilation
+
+**Error Handling:**
+- Always use `Result<T, E>` for fallible operations
+- Use `thiserror` crate for custom error types implementing `Serialize`
+- Use `?` operator for error propagation
+- Avoid `unwrap()` in production code - use proper error handling
+- Return descriptive error messages to the frontend
+
+**Performance:**
+- Use `async` for I/O-bound operations (file operations, network requests)
+- Prefer `tokio` runtime for async operations
+- Use `Mutex` or `RwLock` for shared state (prefer `RwLock` for read-heavy workloads)
+- Profile with `cargo flamegraph` for CPU-bound bottlenecks
+- Avoid blocking the main thread
+
+**Security:**
+- Validate all inputs from frontend
+- Use Tauri's allowlist to restrict API access
+- Implement proper CSP in `tauri.conf.json`
+- Sanitize file paths to prevent directory traversal
+- Use `tauri::api::path` helpers for safe path operations
+
+### Svelte Best Practices
+
+**Component Organization:**
+- Keep components small and focused (< 200 lines)
+- Use `$lib` alias for imports (`$lib/components/Button.svelte`)
+- Separate UI components from business logic
+- Use TypeScript for better type safety
+
+**Reactivity:**
+- Use reactive declarations (`$:`) for derived state
+- Avoid unnecessary reactive statements
+- Use stores for shared state across components
+- Leverage Svelte's automatic subscriptions with `$` prefix
+
+**Performance:**
+- Lazy load components with dynamic imports
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let HeavyComponent;
+
+  onMount(async () => {
+    const module = await import('$lib/components/HeavyComponent.svelte');
+    HeavyComponent = module.default;
+  });
+</script>
+
+{#if HeavyComponent}
+  <svelte:component this={HeavyComponent} />
+{/if}
+```
+
+- Use `{#key}` blocks to force re-renders only when needed
+- Debounce expensive Tauri command calls
+```svelte
+<script lang="ts">
+  import { debounce } from '$lib/utils';
+
+  const debouncedSearch = debounce(async (query: string) => {
+    const results = await invoke('search', { query });
+    // Handle results
+  }, 300);
+</script>
+
+<input on:input={(e) => debouncedSearch(e.target.value)} />
+```
+
+**TypeScript Usage:**
+- Define types for all Tauri command responses
+```typescript
+// src/lib/types/api.ts
+export interface FileInfo {
+  name: string;
+  size: number;
+  modified: number;
+}
+
+export interface AppConfig {
+  theme: 'light' | 'dark';
+  language: string;
+}
+```
+
+- Use strict mode in `tsconfig.json`
+- Avoid `any` types - use `unknown` when type is truly unknown
+- Use generic types for reusable components
+```svelte
+<script lang="ts" generics="T">
+  export let items: T[];
+  export let renderItem: (item: T) => string;
+</script>
+
+<ul>
+  {#each items as item}
+    <li>{renderItem(item)}</li>
+  {/each}
+</ul>
+```
 
 ### Naming Conventions
-- Use snake_case for: variables, file names, directory structures
-- Use descriptive task names starting with action verbs
-- Tag tasks appropriately for selective execution
 
-### Testing Changes
-Always test changes in this order:
-1. Syntax check: `ansible-playbook playbook.yml --syntax-check`
-2. Dry run: `--check` mode
-3. Limited scope: Use tags to run only modified sections
-4. Full run on test server before production
+**Rust:**
+- `snake_case` for: functions, variables, modules, files
+- `PascalCase` for: types, structs, enums, traits
+- `SCREAMING_SNAKE_CASE` for: constants, statics
+- Prefix private items with `_` if unused
 
-## Python Dependencies
+**Svelte/TypeScript:**
+- `PascalCase` for: component files (`Button.svelte`, `UserProfile.svelte`)
+- `camelCase` for: variables, functions, props
+- `kebab-case` for: CSS classes, event names
+- `SCREAMING_SNAKE_CASE` for: constants
+- Prefix stores with `$` when using auto-subscription
 
-The playbook requires Python 3 on target hosts:
-- `ansible_python_interpreter=/usr/bin/python3` set in inventory
-- Docker role installs `python3-pip` and `python3-docker`
-- Uses `--break-system-packages` flag for Ubuntu 24.04+ when installing Docker Python module
+### Testing Strategy
 
-## Reboot Handling
+**Rust Unit Tests:**
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-The playbook checks for `/var/run/reboot-required` and can reboot if needed:
-- Reboot task is tagged with `never` and `reboot`
-- To allow reboots, add `-t reboot` to the ansible-playbook command
-- Reboot timeout: 300 seconds, post-reboot delay: 30 seconds
+    #[test]
+    fn test_command_logic() {
+        let result = process_data("input");
+        assert_eq!(result, "expected");
+    }
 
-## New Consolidated Roles (v2.1.0)
+    #[tokio::test]
+    async fn test_async_command() {
+        let result = async_operation().await;
+        assert!(result.is_ok());
+    }
 
-### LEMP Stack Role (`lemp`)
-Provides complete web server infrastructure with Nginx, MySQL/MariaDB, and PHP-FPM.
+    #[test]
+    fn test_error_handling() {
+        let result = validate_input("");
+        assert!(result.is_err());
+    }
+}
+```
 
-**Key Features:**
-- Nginx with security-hardened default configuration
-- MySQL/MariaDB with secure initial setup
-- PHP-FPM with common modules (mysql, curl, gd, intl, mbstring, soap, xml, zip)
-- Virtual host configuration via templates
-- Service management with handlers
+**Integration Tests:**
+```rust
+// tests/integration_test.rs
+use my_app::commands;
 
-**Configuration Variables:**
-- `install_lemp`: Enable/disable LEMP stack installation
-- `php_modules`: List of PHP modules to install
-- `full_domain`: Domain name for virtual host configuration
-- MySQL credentials stored in `vars/vault.yml`
+#[tokio::test]
+async fn test_full_workflow() {
+    // Test complete user workflows
+    let result = commands::read_file("test.txt".to_string()).await;
+    assert!(result.is_ok());
+}
+```
 
-**Templates:**
-- `wordpress-nginx.conf.j2`: Nginx virtual host for WordPress
-- `.my.cnf.j2`: MySQL client configuration
+**Svelte Component Tests:**
+```typescript
+// src/lib/components/Button.test.ts
+import { render, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import Button from './Button.svelte';
 
-### Swap Configuration Role (`swap`)
-Automatically configures optimal swap space based on available system RAM.
+describe('Button', () => {
+  it('renders with text', () => {
+    const { getByText } = render(Button, { props: { text: 'Click me' } });
+    expect(getByText('Click me')).toBeTruthy();
+  });
 
-**Intelligent Sizing:**
-- RAM < 2GB: Swap = 2x RAM
-- RAM 2-4GB: Swap = 1.5x RAM
-- RAM 4-8GB: Swap = 1x RAM
-- RAM > 8GB: Swap = 1x RAM
+  it('calls onClick handler', async () => {
+    const onClick = vi.fn();
+    const { getByRole } = render(Button, { props: { onClick } });
 
-**Features:**
-- Creates `/swapfile` with appropriate permissions (600)
-- Configures swappiness and cache pressure for optimal performance
-- Persistent configuration via `/etc/fstab`
-- Idempotent execution (checks existing swap before creating)
+    await fireEvent.click(getByRole('button'));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+});
+```
 
-### WordPress Role (`wordpress`)
-Production-ready WordPress deployment with security-hardened configuration.
+**Testing Tauri Commands from Svelte:**
+```typescript
+// src/lib/stores/counter.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { get } from 'svelte/store';
+import { counter } from './counter';
 
-**Features:**
-- Downloads latest WordPress core
-- Creates MySQL database and dedicated user
-- Generates wp-config.php with unique security salts
-- Sets security-hardened file permissions (750 for directories, 640 for files)
-- Nginx virtual host configuration (when `configure_nginx_vhost: true`)
-- SEO-optimized robots.txt
-- PHP performance optimization with .user.ini
+// Mock Tauri API
+vi.mock('@tauri-apps/api/tauri', () => ({
+  invoke: vi.fn()
+}));
 
-**Configuration Variables:**
-- `install_wordpress`: Enable WordPress deployment
-- `configure_nginx_vhost`: Create Nginx virtual host
-- `full_domain`: Primary domain name
-- `http_host`: HTTP host (usually same as full_domain)
-- MySQL credentials: `mysql_db`, `mysql_user`, `mysql_password`, `mysql_root_password`
+import { invoke } from '@tauri-apps/api/tauri';
 
-**Templates:**
-- `wp-config.php.j2`: WordPress configuration with security salts
-- Nginx virtual host shared with LEMP role
+describe('Counter Store', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-**Requirements:**
-- LEMP stack must be installed first (`install_lemp: true`)
-- MySQL credentials must be provided (preferably via Ansible Vault)
-- Domain DNS must point to server IP
+  it('increments counter', async () => {
+    vi.mocked(invoke).mockResolvedValue(1);
 
-### Certbot SSL/TLS Role (`certbot`)
-Automated Let's Encrypt SSL/TLS certificate management with auto-renewal.
+    await counter.increment();
 
-**Features:**
-- Installs Certbot with Nginx plugin
-- Obtains SSL/TLS certificates for domain and www subdomain
-- Configures automatic HTTPS redirect in Nginx
-- Sets up systemd timer for automatic renewal (twice daily)
-- Email notifications for certificate expiration
+    expect(invoke).toHaveBeenCalledWith('increment');
+    expect(get(counter)).toBe(1);
+  });
+});
+```
 
-**Configuration Variables:**
-- `install_certbot`: Enable Certbot installation and certificate generation
-- `certbot_email`: Email for Let's Encrypt notifications
-- `certbot_www_domain`: Include www subdomain in certificate
-- `certbot_auto_renew`: Enable automatic renewal (recommended: true)
-- `full_domain`: Primary domain for certificate
+## Dependency Management
 
-**Certificate Renewal:**
-- Systemd timer runs twice daily
-- Certificates auto-renew 30 days before expiration
-- Nginx automatically reloads after successful renewal
+### Rust Dependencies (Cargo.toml)
 
-**Requirements:**
-- Nginx must be installed and running
-- Domain DNS must point to server IP
-- Ports 80 and 443 must be accessible from the internet
-- Valid email address required for Let's Encrypt notifications
+**Core Dependencies:**
+```toml
+[dependencies]
+tauri = { version = "1.5", features = ["shell-open"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"        # Flexible error handling
+thiserror = "1.0"     # Custom error types
+```
 
-**Rate Limits:**
-- Let's Encrypt allows 5 certificates per week per domain
-- Failed validation attempts count against rate limits
+**Common Tauri Features:**
+- `shell-open`: Open URLs in default browser
+- `fs-all`: Full file system access
+- `dialog-all`: File/message dialogs
+- `notification-all`: System notifications
+- `global-shortcut-all`: Global keyboard shortcuts
+- `clipboard-all`: Clipboard access
+- `http-all`: HTTP client
 
-### Cron Jobs Role (`cron_jobs`)
-Automated system maintenance and security update management.
+**Example with multiple features:**
+```toml
+[dependencies]
+tauri = { version = "1.5", features = [
+  "shell-open",
+  "dialog-all",
+  "fs-all",
+  "notification-all"
+] }
+```
 
-**Features:**
-- Unattended security upgrades (configurable)
-- Automatic package updates (configurable)
-- System cleanup and log rotation
-- Optional periodic system reboots (DANGEROUS - disabled by default)
+**Development Dependencies:**
+```toml
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"      # Mocking for tests
+serial_test = "3.0"   # Serial test execution
+```
 
-**Configuration Variables:**
-- `enable_cron_jobs`: Enable/disable cron job management
-- `enable_unattended_upgrades`: Enable automatic security updates
-- `enable_auto_updates`: Enable automatic package updates
-- `enable_periodic_reboot`: **WARNING**: Reboots server every 6 hours if enabled!
+### Frontend Dependencies (package.json)
 
-**Cron Schedule:**
-- Security updates: Every 48 hours
-- System cleanup: Daily
-- Periodic reboot: Every 6 hours (if enabled - NOT RECOMMENDED for production)
+**Core Dependencies:**
+```json
+{
+  "dependencies": {
+    "@tauri-apps/api": "^1.5.0",
+    "svelte": "^4.2.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "@tauri-apps/cli": "^1.5.0",
+    "@tsconfig/svelte": "^5.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "svelte-check": "^3.6.0",
+    "@testing-library/svelte": "^4.0.0",
+    "vitest": "^1.0.0"
+  }
+}
+```
 
-**Safety Notes:**
-- `enable_periodic_reboot` should almost always be `false`
-- Automatic reboots can cause service disruption
-- Use only in development or testing environments
+**Optional UI Libraries:**
+- **Tailwind CSS**: `tailwindcss`, `autoprefixer`, `postcss`
+- **Svelte Motion**: `svelte-motion` (animations)
+- **Svelte Icons**: `svelte-icons` or `lucide-svelte`
+- **Form Validation**: `felte`, `svelte-forms-lib`
 
-### Development Tools Role (`dev_tools`)
-Installs modern development environment for server-side development.
+## Vite Configuration for Svelte + Tauri
 
-**Tools Installed:**
-- **Neovim**: Latest version with kickstart.nvim configuration
-- **Node.js**: Configurable version via NodeSource (default: v22 LTS)
-- **npm**: Included with Node.js
-- **Claude Code CLI**: Optional Anthropic AI coding assistant
-- **Build essentials**: Compilers and build tools
+**vite.config.ts:**
+```typescript
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
-**Configuration Variables:**
-- `install_dev_tools`: Enable/disable development tools installation
-- `install_neovim`: Include Neovim in installation
-- `install_nodejs`: Include Node.js in installation
-- `install_claude_code`: Include Claude Code CLI (optional)
-- `nodejs_version`: Node.js major version (default: "22")
+export default defineConfig({
+  plugins: [svelte()],
 
-**Neovim Configuration:**
-- Installs kickstart.nvim for sensible defaults
-- LSP, Treesitter, and Telescope pre-configured
-- Optimized for Lua and TypeScript/JavaScript development
+  // Prevent vite from obscuring rust errors
+  clearScreen: false,
 
-**Use Cases:**
-- Server-side Node.js development
-- Infrastructure as Code editing
-- Remote development workflows
-- DevOps automation scripting
+  // Tauri expects a fixed port, fail if that port is not available
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+
+  // To access the Tauri environment variables set by the CLI with information about the current target
+  envPrefix: ['VITE_', 'TAURI_'],
+
+  build: {
+    // Tauri uses Chromium on Windows and WebKit on macOS and Linux
+    target: process.env.TAURI_PLATFORM == 'windows' ? 'chrome105' : 'safari13',
+    // Don't minify for debug builds
+    minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
+    // Produce sourcemaps for debug builds
+    sourcemap: !!process.env.TAURI_DEBUG,
+  },
+
+  // Resolve aliases
+  resolve: {
+    alias: {
+      '$lib': '/src/lib',
+      '$components': '/src/lib/components',
+      '$stores': '/src/lib/stores',
+    }
+  }
+});
+```
+
+## Security Considerations
+
+### Tauri Allowlist Configuration
+
+Restrict API access to only what's needed:
+```json
+{
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "fs": {
+        "scope": ["$APPDATA/*", "$DOWNLOAD/*", "$RESOURCE/*"],
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "createDir": true,
+        "removeFile": true
+      },
+      "dialog": {
+        "open": true,
+        "save": true,
+        "message": true,
+        "ask": true
+      },
+      "shell": {
+        "open": true
+      },
+      "notification": {
+        "all": true
+      }
+    }
+  }
+}
+```
+
+### Content Security Policy
+
+```json
+{
+  "tauri": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:"
+    }
+  }
+}
+```
+
+### Input Validation
+
+Always validate frontend inputs in Rust:
+```rust
+use validator::Validate;
+
+#[derive(Debug, Validate, Deserialize)]
+struct UserInput {
+    #[validate(length(min = 1, max = 100))]
+    name: String,
+
+    #[validate(email)]
+    email: String,
+
+    #[validate(range(min = 0, max = 120))]
+    age: u8,
+}
+
+#[tauri::command]
+fn validate_input(data: UserInput) -> Result<String, String> {
+    data.validate()
+        .map_err(|e| format!("Validation error: {}", e))?;
+
+    Ok("Valid input".to_string())
+}
+```
+
+## Build Optimization
+
+### Release Build Configuration
+
+**Cargo.toml:**
+```toml
+[profile.release]
+opt-level = "z"       # Optimize for size
+lto = true            # Link-time optimization
+codegen-units = 1     # Better optimization, slower compile
+panic = "abort"       # Smaller binaries
+strip = true          # Strip symbols
+```
+
+### Frontend Build Optimization
+
+**vite.config.ts:**
+```typescript
+export default defineConfig({
+  build: {
+    minify: 'esbuild',
+    target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'tauri': ['@tauri-apps/api'],
+        },
+      },
+    },
+  },
+});
+```
 
 ## Common Workflow Examples
 
-### Complete WordPress Stack Deployment
+### Desktop App with File Operations
 ```bash
-# 1. Configure variables in vars/default.yml:
-#    install_lemp: true
-#    install_wordpress: true
-#    configure_nginx_vhost: true
-#    install_certbot: true
-#    full_domain: example.com
-#    certbot_email: admin@example.com
+# 1. Initialize project
+npm create tauri-app
+# Select: Svelte, TypeScript, Vite
 
-# 2. Create MySQL credentials in vars/vault.yml:
-ansible-vault create vars/vault.yml
-# Add: mysql_root_password, mysql_user, mysql_password, mysql_db
+# 2. Add file system commands in src-tauri/src/commands.rs
+# 3. Configure allowlist in tauri.conf.json
+# 4. Create Svelte components for file management
+# 5. Test in development
+npm run tauri dev
 
-# 3. Deploy complete stack:
-ansible-playbook playbook.yml --ask-vault-pass
-
-# 4. Complete WordPress installation:
-# Visit: https://example.com/wp-admin/install.php
+# 6. Build for production
+npm run tauri build
 ```
 
-### Development Server Setup
-```bash
-# Configure for development:
-# install_docker: true
-# install_dev_tools: true
-# install_neovim: true
-# install_nodejs: true
-# nodejs_version: "22"
+### Create a Settings Panel
+```svelte
+<!-- src/lib/components/Settings.svelte -->
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/tauri';
+  import { settings } from '$lib/stores/settings';
 
-# Deploy development environment:
-ansible-playbook playbook.yml --tags "docker,dev"
+  async function saveSettings() {
+    try {
+      await invoke('save_settings', {
+        settings: $settings
+      });
+      // Show success message
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
+  }
+</script>
+
+<div class="settings">
+  <h2>Settings</h2>
+
+  <label>
+    Theme
+    <select bind:value={$settings.theme}>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </label>
+
+  <button on:click={saveSettings}>Save</button>
+</div>
 ```
 
-### Add LEMP to Existing Server
-```bash
-# Set install_lemp: true in vars/default.yml
+### System Tray Integration
+```rust
+// src-tauri/src/main.rs
+use tauri::{CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent};
+use tauri::Manager;
 
-# Install only LEMP stack:
-ansible-playbook playbook.yml --tags lemp
+fn main() {
+    let quit = CustomMenuItem::new("quit".to_string(), "Quit");
+    let show = CustomMenuItem::new("show".to_string(), "Show");
+    let tray_menu = SystemTrayMenu::new()
+        .add_item(show)
+        .add_item(quit);
 
-# Verify services:
-ansible all -m shell -a "systemctl status nginx mysql php*-fpm"
-```
+    let tray = SystemTray::new().with_menu(tray_menu);
 
-### SSL Certificate Installation
-```bash
-# Prerequisites:
-# - LEMP stack installed
-# - Domain DNS pointing to server
-# - Ports 80 and 443 accessible
-
-# Set in vars/default.yml:
-# install_certbot: true
-# certbot_email: admin@example.com
-# full_domain: example.com
-
-# Install SSL certificate:
-ansible-playbook playbook.yml --tags certbot
-
-# Verify certificate:
-ssh user@server "sudo certbot certificates"
+    tauri::Builder::default()
+        .system_tray(tray)
+        .on_system_tray_event(|app, event| match event {
+            SystemTrayEvent::MenuItemClick { id, .. } => {
+                match id.as_str() {
+                    "quit" => {
+                        std::process::exit(0);
+                    }
+                    "show" => {
+                        let window = app.get_window("main").unwrap();
+                        window.show().unwrap();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
 ```
 
 ## Documentation Resources
 
-This repository includes comprehensive documentation:
+This repository should include:
 
 - **CLAUDE.md** (this file): Technical reference for Claude Code AI assistant
 - **README.md**: User-facing documentation with quick start guide
-- **FEATURES.md**: Complete feature catalog with status and capabilities
-- **ADR.md**: Architecture Decision Records documenting key design choices
-- **WORKFLOWS.md**: Step-by-step workflow guides for common scenarios
-- **PRD.md**: Product Requirements Document with project vision
+- **ARCHITECTURE.md**: System architecture and design decisions
+- **CONTRIBUTING.md**: Contribution guidelines and development setup
+- **CHANGELOG.md**: Version history and release notes
+
+## Debugging and Troubleshooting
+
+### Rust Debugging
+
+**Enable verbose logging:**
+```bash
+RUST_LOG=debug npm run tauri dev
+```
+
+**Attach debugger (VS Code):**
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tauri Development Debug",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path=./src-tauri/Cargo.toml",
+          "--no-default-features"
+        ]
+      },
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
+```
+
+### Svelte Debugging
+
+**Open DevTools in dev mode:**
+```rust
+// src-tauri/src/main.rs
+fn main() {
+    tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            {
+                let window = app.get_window("main").unwrap();
+                window.open_devtools();
+            }
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+**Svelte DevTools:**
+- Install Svelte DevTools browser extension
+- Use `console.log` for reactive statements:
+```svelte
+<script lang="ts">
+  $: console.log('Value changed:', value);
+</script>
+```
+
+### Common Issues
+
+**Build Failures:**
+```bash
+# Clear all caches and rebuild
+cargo clean
+rm -rf node_modules dist .svelte-kit
+npm install
+npm run tauri build
+```
+
+**Hot Reload Not Working:**
+- Check that Vite dev server is running on port 5173
+- Verify `devPath` in `tauri.conf.json` matches Vite port
+- Ensure `beforeDevCommand` is correct
+
+**Svelte Component Not Updating:**
+- Check reactive statements use `$:` prefix
+- Ensure stores are subscribed with `$` prefix
+- Verify component key blocks if forcing re-render
+
+**Runtime Errors:**
+- Check browser console for frontend errors
+- Review Rust logs with `RUST_LOG=debug`
+- Verify allowlist permissions in `tauri.conf.json`
+- Check that Tauri commands are registered in `main.rs`
 
 ## Version History
 
-**v2.1.0** (2025-11-12):
-- Consolidated functionality from ansible-stack-ubuntu
-- Added 6 new roles: swap, lemp, wordpress, certbot, cron_jobs, dev_tools
-- Enhanced documentation with FEATURES.md, ADR.md, WORKFLOWS.md
-- Expanded vars/default.yml with comprehensive configuration options
-- Improved tag granularity for surgical task execution
-- Ubuntu 24.04 LTS full support
-
-**v2.0.0** (2024-10-15):
-- Docker repository conflict resolution
-- Block/rescue error handling
-- Modern GPG key management
-- Python 3 standardization
-
-**v1.0.0** (2024-09-01):
-- Initial stable release
-- Core roles: base_setup, security, docker
-- Fail2ban integration
-- Tag-based execution
+**v1.0.0** (2025-01-13):
+- Initial Tauri + Svelte + Rust project setup
+- Cross-platform desktop application framework
+- Rust backend with Tauri commands
+- Svelte frontend with TypeScript
+- Vite build pipeline with hot reload
+- Comprehensive testing setup (Vitest + Svelte Testing Library)
+- Development and production build configurations

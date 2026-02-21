@@ -21,6 +21,20 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# SECTION 0: Ensure cron is installed
+# -----------------------------------------------------------------------------
+# Minimal Ubuntu installs may not include cron by default.
+
+- name: "Prerequisites | Ensure cron is installed"
+  ansible.builtin.apt:
+    name: cron
+    state: present
+  tags:
+    - cron
+    - cron-security
+    - cron-updates
+
+# -----------------------------------------------------------------------------
 # SECTION 1: Unattended Security Upgrades
 # -----------------------------------------------------------------------------
 # Automatically applies security patches without manual intervention.

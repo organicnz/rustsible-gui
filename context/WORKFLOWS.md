@@ -38,7 +38,7 @@ eval $(ssh-agent)
 ssh-add ~/.ssh/azure_id_rsa.pem
 
 # Test SSH connection
-ssh -i ~/.ssh/azure_id_rsa.pem root@152.53.136.84
+ssh -i ~/.ssh/azure_id_rsa.pem root@152.00.000.00
 ```
 
 If using password authentication:
@@ -53,7 +53,7 @@ Edit `inventory.ini`:
 ```ini
 [webservers]
 # Production server
-152.53.136.84 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
+152.00.000.00 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3
@@ -64,7 +64,7 @@ ansible_python_interpreter=/usr/bin/python3
 Edit `vars/default.yml`:
 ```yaml
 # Server Configuration
-ip_address: "152.53.136.84"
+ip_address: "152.00.000.00"
 added_user: organic
 copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa_gitlab.pub') }}"
 
@@ -114,7 +114,7 @@ When prompted, enter root password (if not using SSH key).
 
 ```bash
 # Test SSH access with new user
-ssh -i ~/.ssh/id_rsa_gitlab organic@152.53.136.84
+ssh -i ~/.ssh/id_rsa_gitlab organic@152.00.000.00
 
 # Verify sudo access
 sudo whoami  # Should return: root
@@ -135,7 +135,7 @@ sudo fail2ban-client status
 
 ```bash
 # Check if reboot is needed
-ssh organic@152.53.136.84 "ls -l /var/run/reboot-required"
+ssh organic@152.00.000.00 "ls -l /var/run/reboot-required"
 
 # If file exists, reboot
 ansible-playbook playbook.yml -t reboot -l webservers -u organic --ask-become-pass
@@ -168,7 +168,7 @@ Edit `inventory.ini`:
 ```ini
 [webservers]
 # Production servers
-prod-web1 ansible_host=152.53.136.84 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
+prod-web1 ansible_host=152.00.000.00 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 prod-web2 ansible_host=152.53.136.85 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 
 [staging]
@@ -601,7 +601,7 @@ ssh -p 22 organic@dev-web1
 Edit `inventory.ini`:
 ```ini
 [webservers]
-prod-web1 ansible_host=152.53.136.84 ansible_user=organic ansible_port=2222 ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
+prod-web1 ansible_host=152.00.000.00 ansible_user=organic ansible_port=2222 ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 prod-web2 ansible_host=152.53.136.85 ansible_user=organic ansible_port=2222 ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 
 [all:vars]
@@ -629,7 +629,7 @@ ansible-playbook playbook.yml -t ssh-port,ssh-allow -l webservers -u organic --a
 Update `~/.ssh/config` on your local machine:
 ```
 Host prod-web1
-    HostName 152.53.136.84
+    HostName 152.00.000.00
     Port 2222
     User organic
     IdentityFile ~/.ssh/id_rsa_gitlab
@@ -1081,7 +1081,7 @@ Edit `inventory.ini`:
 ```ini
 [webservers]
 # Old server (failed)
-# prod-web1 ansible_host=152.53.136.84 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
+# prod-web1 ansible_host=152.00.000.00 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab
 
 # New replacement server
 prod-web1-new ansible_host=152.53.137.100 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa_gitlab

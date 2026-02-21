@@ -133,3 +133,17 @@ password.txt
 
 # GUI configuration cache
 .gui_config_cache.json
+
+# Rust launcher
+launcher/target/
+launcher/Cargo.lock
+launch-gui
+
+# GUI build artifacts
+gui-egui/target/
+ansible-gui
+rustsible-gui
+
+# Provisioning logs
+provisioning.log
+.ansible-retry/
