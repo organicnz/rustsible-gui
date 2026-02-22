@@ -118,7 +118,7 @@ ansible_check_mode: false
 enable_kernel_hardening: false  # Enable via interactive prompt or set to true
 kernel_hardening_settings:
   # Network Security
-  net.ipv4.ip_forward: 0  # Disable IP forwarding
+  net.ipv4.ip_forward: 0  # Disable IP forwarding (overridden to 1 when Docker is enabled)
   net.ipv4.conf.all.send_redirects: 0  # Disable ICMP redirects
   net.ipv4.conf.default.send_redirects: 0
   net.ipv4.conf.all.accept_redirects: 0  # Don't accept ICMP redirects

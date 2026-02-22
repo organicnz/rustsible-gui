@@ -253,6 +253,24 @@
     - hardening
     - kernel-hardening
 
+# Docker requires ip_forward=1 for container networking.
+# Re-enable it after kernel hardening if Docker is installed.
+- name: "Kernel Hardening | Re-enable IP forwarding for Docker"
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: yes
+    sysctl_set: yes
+    sysctl_file: /etc/sysctl.d/99-docker.conf
+  when:
+    - enable_kernel_hardening | default(false) | bool
+    - install_docker | default(false) | bool
+  tags:
+    - security
+    - kernel-hardening
+    - docker
+
 # -----------------------------------------------------------------------------
 # SECTION 7: Unattended Security Upgrades
 # -----------------------------------------------------------------------------

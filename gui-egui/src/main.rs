@@ -1301,8 +1301,8 @@ async fn run_provisioning(
     if config.suricata {
         cmd.arg("-e").arg("enable_suricata=yes");
     }
-    if config.ssh_2fa_totp || config.advanced_protection {
-        cmd.arg("-e").arg("enable_ssh_2fa_totp=yes");
+    if config.ssh_2fa_totp || config.ssh_2fa_fido2 || config.ssh_2fa_duo || config.advanced_protection {
+        cmd.arg("-e").arg("enable_ssh_2fa=yes");
     }
     if config.ssh_2fa_fido2 {
         cmd.arg("-e").arg("enable_ssh_2fa_fido2=yes");
@@ -1503,6 +1503,7 @@ fn cleanup_previous_instances() -> Result<(), String> {
         return Ok(());
     }
 
+    let current_pid_str = current_pid.to_string();
     println!("Found {} process(es) to terminate", target_processes.len());
 
     // Phase 0: Kill parent processes first (releases zombie children)
@@ -1594,129 +1595,30 @@ fn cleanup_previous_instances() -> Result<(), String> {
     // Wait for processes to fully terminate
     thread::sleep(Duration::from_millis(500));
 
-    // Phase 3: System-wide cleanup using OS tools (Unix only)
+    // Phase 3: Targeted kill of remaining processes (Unix only)
     #[cfg(unix)]
     {
-        println!("Phase 3: System-wide cleanup...");
+        println!("Phase 3: Targeted cleanup of remaining PIDs...");
 
-        // Use killall -9 to forcefully kill any remaining processes
-        let _ = std::process::Command::new("killall")
-            .arg("-9")
-            .arg("rustsible-gui")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .ok(); // Ignore failures gracefully
-
-        // Use pkill -9 with pattern matching as a secondary cleanup
-        let _ = std::process::Command::new("pkill")
-            .arg("-9")
-            .arg("-f")
-            .arg("rustsible-gui")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .ok(); // Ignore failures gracefully
-
-        // Short wait after system-wide cleanup
-        thread::sleep(Duration::from_millis(300));
-
-        println!("System-wide cleanup completed.");
-    }
-
-    // Phase 4: macOS-specific aggressive cleanup using launchctl
-    #[cfg(target_os = "macos")]
-    {
-        println!("Phase 4: macOS launchctl force quit...");
         system.refresh_processes();
-
         for pid in &target_processes {
             if system.process(*pid).is_some() {
                 let pid_str = pid.as_u32().to_string();
-                println!("  Using launchctl to kill PID {}...", pid_str);
-
-                // Try launchctl kill SIGKILL
-                let _ = std::process::Command::new("launchctl")
-                    .arg("kill")
-                    .arg("SIGKILL")
-                    .arg(format!("system/{}", pid_str))
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .ok();
-
-                // Also try with gui domain
-                let _ = std::process::Command::new("launchctl")
-                    .arg("kill")
-                    .arg("SIGKILL")
-                    .arg(format!("gui/{}", pid_str))
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .ok();
-
-                // Try removing the process from launchd entirely
-                let _ = std::process::Command::new("launchctl")
-                    .arg("remove")
-                    .arg(format!("system/{}", pid_str))
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .ok();
-            }
-        }
-
-        thread::sleep(Duration::from_millis(300));
-        println!("macOS launchctl cleanup completed.");
-    }
-
-    // Phase 5: Nuclear option - Process group kill
-    #[cfg(unix)]
-    {
-        println!("Phase 5: Process group termination (nuclear option)...");
-        system.refresh_processes();
-
-        let mut process_groups = std::collections::HashSet::new();
-
-        // Collect all process group IDs
-        for pid in &target_processes {
-            if system.process(*pid).is_some() {
-                // Get process group ID using ps command
-                if let Ok(output) = std::process::Command::new("ps")
-                    .arg("-o")
-                    .arg("pgid=")
-                    .arg("-p")
-                    .arg(pid.as_u32().to_string())
-                    .output()
-                {
-                    if let Ok(pgid_str) = String::from_utf8(output.stdout) {
-                        if let Ok(pgid) = pgid_str.trim().parse::<i32>() {
-                            // Don't kill our own process group or PID 1
-                            if pgid > 1 && pgid != current_pid as i32 {
-                                process_groups.insert(pgid);
-                            }
-                        }
-                    }
+                if pid_str != current_pid_str {
+                    println!("  kill -9 PID {}...", pid_str);
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(&pid_str)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                        .ok();
                 }
             }
         }
 
-        // Kill entire process groups
-        for pgid in process_groups {
-            println!("  Killing process group {}...", pgid);
-
-            // Use negative PID to kill entire process group
-            let _ = std::process::Command::new("kill")
-                .arg("-9")
-                .arg(format!("-{}", pgid))
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .ok();
-        }
-
         thread::sleep(Duration::from_millis(300));
-        println!("Process group termination completed.");
+        println!("Targeted cleanup completed.");
     }
 
     // Final verification
