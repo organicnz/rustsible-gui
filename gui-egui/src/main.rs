@@ -50,6 +50,7 @@ enum NavSection {
     Features,
     Security,
     Maintenance,
+    Tasks,
     Output,
 }
 
@@ -60,9 +61,14 @@ impl NavSection {
             NavSection::Features => "Features",
             NavSection::Security => "Security",
             NavSection::Maintenance => "Maintenance",
+            NavSection::Tasks => "Tasks",
             NavSection::Output => "Output",
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -85,6 +91,32 @@ struct ProvisioningConfig {
     audit_logging: bool,
     log_monitoring: bool,
     advanced_protection: bool,
+    #[serde(default)]
+    ssh_2fa_totp: bool,
+    #[serde(default)]
+    ssh_2fa_fido2: bool,
+    #[serde(default)]
+    ssh_2fa_duo: bool,
+    #[serde(default)]
+    backups: bool,
+    #[serde(default)]
+    usb_restrictions: bool,
+    // Devtools sub-tasks
+    #[serde(default = "default_true")]
+    install_neovim: bool,
+    #[serde(default = "default_true")]
+    install_nodejs: bool,
+    #[serde(default = "default_true")]
+    install_claude_code: bool,
+    // Extra security tasks
+    #[serde(default)]
+    secure_shm: bool,
+    #[serde(default)]
+    lynis: bool,
+    #[serde(default)]
+    disable_ipv6: bool,
+    #[serde(default)]
+    suricata: bool,
     cron_jobs: bool,
     periodic_reboot: bool,
     reboot_hour: String,
@@ -115,6 +147,18 @@ impl Default for ProvisioningConfig {
             audit_logging: false,
             log_monitoring: false,
             advanced_protection: false,
+            ssh_2fa_totp: false,
+            ssh_2fa_fido2: false,
+            ssh_2fa_duo: false,
+            backups: false,
+            usb_restrictions: false,
+            install_neovim: true,
+            install_nodejs: true,
+            install_claude_code: true,
+            secure_shm: false,
+            lynis: false,
+            disable_ipv6: false,
+            suricata: false,
             cron_jobs: true,
             periodic_reboot: false,
             reboot_hour: "3".to_string(),
@@ -369,8 +413,29 @@ impl AnsibleProvisioningApp {
             .color(macos_colors::LABEL_TERTIARY));
         ui.add_space(4.0);
 
-        ui.checkbox(&mut self.config.advanced_protection, egui::RichText::new("Advanced Protection").size(13.0));
-        ui.label(egui::RichText::new("   2FA, Backups, USB restrictions")
+        ui.checkbox(&mut self.config.ssh_2fa_totp, egui::RichText::new("SSH 2FA: TOTP").size(13.0));
+        ui.label(egui::RichText::new("   Authy, Google Authenticator, 1Password, etc.")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.ssh_2fa_fido2, egui::RichText::new("SSH 2FA: FIDO2 / YubiKey").size(13.0));
+        ui.label(egui::RichText::new("   Hardware security key authentication")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.ssh_2fa_duo, egui::RichText::new("SSH 2FA: Duo Security").size(13.0));
+        ui.label(egui::RichText::new("   Duo push notifications for SSH")
+            .size(11.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.backups, egui::RichText::new("Automated Backups").size(13.0));
+        ui.add_space(4.0);
+
+        ui.checkbox(&mut self.config.usb_restrictions, egui::RichText::new("USB Restrictions").size(13.0));
+        ui.label(egui::RichText::new("   Block unauthorized USB devices")
             .size(11.0)
             .color(macos_colors::LABEL_TERTIARY));
     }
@@ -407,6 +472,205 @@ impl AnsibleProvisioningApp {
                     ui.selectable_value(&mut self.config.reboot_hour, "*/24".to_string(), "Every 24 hours");
                 });
         }
+    }
+
+    fn render_tasks(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Tasks")
+            .size(15.0)
+            .strong()
+            .color(macos_colors::LABEL_PRIMARY));
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Fine-grained control over all provisioning tasks")
+            .size(12.0)
+            .color(macos_colors::LABEL_TERTIARY));
+        ui.add_space(8.0);
+
+        // Select All / Deselect All buttons
+        ui.horizontal(|ui| {
+            if ui.add(egui::Button::new(
+                egui::RichText::new("Select All").size(12.0)
+            ).corner_radius(6.0)).clicked() {
+                self.config.swap = true;
+                self.config.cron_jobs = true;
+                self.config.fail2ban = true;
+                self.config.docker = true;
+                self.config.lemp = true;
+                self.config.devtools = true;
+                self.config.install_neovim = true;
+                self.config.install_nodejs = true;
+                self.config.install_claude_code = true;
+                self.config.wordpress = true;
+                self.config.certbot = true;
+                self.config.system_hardening = true;
+                self.config.secure_shm = true;
+                self.config.apparmor = true;
+                self.config.rootkit_detection = true;
+                self.config.file_integrity = true;
+                self.config.audit_logging = true;
+                self.config.log_monitoring = true;
+                self.config.lynis = true;
+                self.config.disable_ipv6 = true;
+                self.config.suricata = true;
+                self.config.advanced_protection = true;
+                self.config.ssh_2fa_totp = true;
+                self.config.ssh_2fa_fido2 = true;
+                self.config.ssh_2fa_duo = true;
+                self.config.backups = true;
+                self.config.usb_restrictions = true;
+                self.config.periodic_reboot = true;
+            }
+            if ui.add(egui::Button::new(
+                egui::RichText::new("Deselect All").size(12.0)
+            ).corner_radius(6.0)).clicked() {
+                self.config.swap = false;
+                self.config.cron_jobs = false;
+                self.config.fail2ban = false;
+                self.config.docker = false;
+                self.config.lemp = false;
+                self.config.devtools = false;
+                self.config.install_neovim = false;
+                self.config.install_nodejs = false;
+                self.config.install_claude_code = false;
+                self.config.wordpress = false;
+                self.config.certbot = false;
+                self.config.system_hardening = false;
+                self.config.secure_shm = false;
+                self.config.apparmor = false;
+                self.config.rootkit_detection = false;
+                self.config.file_integrity = false;
+                self.config.audit_logging = false;
+                self.config.log_monitoring = false;
+                self.config.lynis = false;
+                self.config.disable_ipv6 = false;
+                self.config.suricata = false;
+                self.config.advanced_protection = false;
+                self.config.ssh_2fa_totp = false;
+                self.config.ssh_2fa_fido2 = false;
+                self.config.ssh_2fa_duo = false;
+                self.config.backups = false;
+                self.config.usb_restrictions = false;
+                self.config.periodic_reboot = false;
+            }
+        });
+        ui.add_space(8.0);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            // ── Base Setup ──
+            ui.separator();
+            ui.label(egui::RichText::new("Base Setup")
+                .size(12.0)
+                .strong()
+                .color(macos_colors::LABEL_SECONDARY));
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.config.swap, egui::RichText::new("Swap Memory (auto-sized)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.cron_jobs, egui::RichText::new("Automated Updates & Cron Jobs").size(13.0));
+
+            ui.add_space(12.0);
+
+            // ── Features ──
+            ui.separator();
+            ui.label(egui::RichText::new("Features")
+                .size(12.0)
+                .strong()
+                .color(macos_colors::LABEL_SECONDARY));
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.config.fail2ban, egui::RichText::new("Fail2ban Intrusion Prevention").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.docker, egui::RichText::new("Docker & Docker Compose").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.lemp, egui::RichText::new("LEMP Stack (Nginx, MySQL, PHP)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.devtools, egui::RichText::new("Development Tools").size(13.0));
+            if self.config.devtools {
+                ui.indent("devtools_sub", |ui| {
+                    ui.checkbox(&mut self.config.install_neovim, egui::RichText::new("Neovim editor").size(12.0));
+                    ui.checkbox(&mut self.config.install_nodejs, egui::RichText::new("Node.js runtime").size(12.0));
+                    ui.checkbox(&mut self.config.install_claude_code, egui::RichText::new("Claude Code CLI").size(12.0));
+                });
+            }
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.wordpress, egui::RichText::new("WordPress CMS").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.certbot, egui::RichText::new("Certbot SSL/TLS Certificates").size(13.0));
+
+            ui.add_space(12.0);
+
+            // ── Security ──
+            ui.separator();
+            ui.label(egui::RichText::new("Security")
+                .size(12.0)
+                .strong()
+                .color(macos_colors::LABEL_SECONDARY));
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.config.system_hardening, egui::RichText::new("System Hardening").size(13.0));
+            ui.label(egui::RichText::new("   Kernel hardening, sysctl tuning")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.secure_shm, egui::RichText::new("Secure Shared Memory").size(13.0));
+            ui.label(egui::RichText::new("   Restrict /dev/shm access")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.apparmor, egui::RichText::new("AppArmor Enforcement").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.rootkit_detection, egui::RichText::new("Rootkit Detection (rkhunter)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.file_integrity, egui::RichText::new("File Integrity Monitoring (AIDE)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.audit_logging, egui::RichText::new("Audit Logging (auditd)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.log_monitoring, egui::RichText::new("Log Monitoring (Logwatch)").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.lynis, egui::RichText::new("Lynis Security Audit").size(13.0));
+            ui.label(egui::RichText::new("   Comprehensive security scanner")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.disable_ipv6, egui::RichText::new("Disable IPv6").size(13.0));
+            ui.label(egui::RichText::new("   Reduce attack surface if unused")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.suricata, egui::RichText::new("Suricata IDS").size(13.0));
+            ui.label(egui::RichText::new("   Network intrusion detection")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.ssh_2fa_totp, egui::RichText::new("SSH 2FA: TOTP").size(13.0));
+            ui.label(egui::RichText::new("   Authy, Google Authenticator, 1Password, etc.")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.ssh_2fa_fido2, egui::RichText::new("SSH 2FA: FIDO2 / YubiKey").size(13.0));
+            ui.label(egui::RichText::new("   Hardware security key authentication")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.ssh_2fa_duo, egui::RichText::new("SSH 2FA: Duo Security").size(13.0));
+            ui.label(egui::RichText::new("   Duo push notifications for SSH")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.backups, egui::RichText::new("Automated Backups").size(13.0));
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.config.usb_restrictions, egui::RichText::new("USB Restrictions").size(13.0));
+            ui.label(egui::RichText::new("   Block unauthorized USB devices")
+                .size(11.0)
+                .color(macos_colors::LABEL_TERTIARY));
+
+            ui.add_space(12.0);
+
+            // ── Maintenance ──
+            ui.separator();
+            ui.label(egui::RichText::new("Maintenance")
+                .size(12.0)
+                .strong()
+                .color(macos_colors::LABEL_SECONDARY));
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.config.periodic_reboot, egui::RichText::new("Periodic System Reboot").size(13.0));
+        });
     }
 
     fn render_output(&mut self, ui: &mut egui::Ui) {
@@ -653,6 +917,7 @@ impl eframe::App for AnsibleProvisioningApp {
                     NavSection::Features,
                     NavSection::Security,
                     NavSection::Maintenance,
+                    NavSection::Tasks,
                     NavSection::Output,
                 ];
 
@@ -707,6 +972,7 @@ impl eframe::App for AnsibleProvisioningApp {
                     NavSection::Features => self.render_features(ui),
                     NavSection::Security => self.render_security(ui),
                     NavSection::Maintenance => self.render_maintenance(ui),
+                    NavSection::Tasks => self.render_tasks(ui),
                     NavSection::Output => self.render_output(ui),
                 }
             });
@@ -998,8 +1264,18 @@ async fn run_provisioning(
     cmd.arg("-e").arg(format!("prompt_enable_periodic_reboot={}", bool_to_yes_no(config.periodic_reboot)));
     cmd.arg("-e").arg(format!("prompt_reboot_hour={}", config.reboot_hour));
 
+    // Devtools sub-task flags
+    if config.devtools {
+        cmd.arg("-e").arg(format!("prompt_install_neovim={}", bool_to_yes_no(config.install_neovim)));
+        cmd.arg("-e").arg(format!("prompt_install_nodejs={}", bool_to_yes_no(config.install_nodejs)));
+        cmd.arg("-e").arg(format!("prompt_install_claude_code={}", bool_to_yes_no(config.install_claude_code)));
+    }
+
     if config.system_hardening {
         cmd.arg("-e").arg("enable_kernel_hardening=yes");
+    }
+    if config.secure_shm {
+        cmd.arg("-e").arg("enable_secure_shm=yes");
     }
     if config.apparmor {
         cmd.arg("-e").arg("enable_apparmor=yes");
@@ -1016,9 +1292,28 @@ async fn run_provisioning(
     if config.log_monitoring {
         cmd.arg("-e").arg("enable_logwatch=yes");
     }
-    if config.advanced_protection {
-        cmd.arg("-e").arg("enable_ssh_2fa=yes");
+    if config.lynis {
+        cmd.arg("-e").arg("enable_lynis=yes");
+    }
+    if config.disable_ipv6 {
+        cmd.arg("-e").arg("disable_ipv6=yes");
+    }
+    if config.suricata {
+        cmd.arg("-e").arg("enable_suricata=yes");
+    }
+    if config.ssh_2fa_totp || config.advanced_protection {
+        cmd.arg("-e").arg("enable_ssh_2fa_totp=yes");
+    }
+    if config.ssh_2fa_fido2 {
+        cmd.arg("-e").arg("enable_ssh_2fa_fido2=yes");
+    }
+    if config.ssh_2fa_duo {
+        cmd.arg("-e").arg("enable_ssh_2fa_duo=yes");
+    }
+    if config.backups || config.advanced_protection {
         cmd.arg("-e").arg("enable_backups=yes");
+    }
+    if config.usb_restrictions || config.advanced_protection {
         cmd.arg("-e").arg("enable_usb_restrictions=yes");
     }
 
