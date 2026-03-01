@@ -696,13 +696,24 @@
     - name: "Rules | Update Suricata rulesets"
       ansible.builtin.command: suricata-update
       changed_when: false
+      failed_when: false
+      register: suricata_update_result
       when: not suricata_rules.stat.exists
+
+    - name: "Rules | Display Suricata update warning if failed"
+      ansible.builtin.debug:
+        msg: "Warning: Suricata rule update failed. You may need to fix /etc/suricata/suricata.yaml manually. Error: {{ suricata_update_result.stderr | default('Unknown error') }}"
+      when: 
+        - not suricata_rules.stat.exists
+        - suricata_update_result.rc is defined
+        - suricata_update_result.rc != 0
 
     - name: "Service | Enable and start Suricata"
       ansible.builtin.systemd:
         name: suricata
         enabled: yes
         state: started
+      when: suricata_rules.stat.exists or (suricata_update_result.rc is defined and suricata_update_result.rc == 0)
   when: enable_suricata | bool
   tags:
     - security

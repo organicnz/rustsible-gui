@@ -998,11 +998,32 @@ async fn run_provisioning(config: ProvisioningConfig, tx: Sender<ProvisioningMes
     let success = status.success();
     let exit_code = status.code().unwrap_or(-1);
     
+    // Send prominent completion message
+    let _ = tx.send(ProvisioningMessage::Output("".into()));
+    let _ = tx.send(ProvisioningMessage::Output("═══════════════════════════════════════════════════════════".into()));
+    
     if success {
-        let _ = tx.send(ProvisioningMessage::Output(format!("✅ Provisioning completed successfully (exit code: {})", exit_code)));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output("    ✅ PROVISIONING COMPLETED SUCCESSFULLY".into()));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output(format!("    Exit Code: {}", exit_code)));
+        let _ = tx.send(ProvisioningMessage::Output(format!("    Server: {}", config.ip_address)));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output("    Your server is now configured and ready to use!".into()));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
     } else {
-        let _ = tx.send(ProvisioningMessage::Output(format!("❌ Provisioning failed (exit code: {})", exit_code)));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output("    ❌ PROVISIONING FAILED".into()));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output(format!("    Exit Code: {}", exit_code)));
+        let _ = tx.send(ProvisioningMessage::Output(format!("    Server: {}", config.ip_address)));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
+        let _ = tx.send(ProvisioningMessage::Output("    Check the output above for error details.".into()));
+        let _ = tx.send(ProvisioningMessage::Output("".into()));
     }
+    
+    let _ = tx.send(ProvisioningMessage::Output("═══════════════════════════════════════════════════════════".into()));
+    let _ = tx.send(ProvisioningMessage::Output("".into()));
     
     let _ = tx.send(ProvisioningMessage::Complete(success));
     Ok(())
