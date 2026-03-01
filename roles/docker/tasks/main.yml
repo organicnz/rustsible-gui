@@ -194,17 +194,30 @@
         - groups
         - security
 
-    - name: "Docker Users | Add specified users to docker group"
+    - name: "Docker Users | Check which configured users exist on the system"
+      # Verify users exist before attempting to add them to the docker group.
+      # Prevents task failure if a user (like added_user) was not created.
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ item }}"
+      loop: "{{ docker_users | default([]) }}"
+      register: docker_user_check
+      failed_when: false
+      changed_when: false
+      tags:
+        - docker-users
+        - user-groups
+        - security
+
+    - name: "Docker Users | Add existing users to docker group"
       # Grants users permission to run Docker commands without sudo.
-      # WARNING: Members of docker group have root-equivalent access!
-      # They can mount host filesystem in containers and escape to root.
-      # Only add trusted users who already have sudo access.
-      # Users defined in vars/default.yml under 'docker_users' list.
+      # Only adds users that were found in the previous getent check.
       ansible.builtin.user:
-        name: "{{ item }}"
+        name: "{{ item.item }}"
         groups: docker
         append: yes
-      loop: "{{ docker_users | default([]) }}"
+      loop: "{{ docker_user_check.results }}"
+      when: item.rc == 0
       tags:
         - docker-users
         - user-groups

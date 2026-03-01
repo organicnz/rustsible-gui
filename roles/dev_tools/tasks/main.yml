@@ -80,6 +80,15 @@
         - neovim
         - config
 
+    - name: "Neovim | Check if kickstart.nvim is already cloned"
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user }}/.config/nvim/.git"
+      register: nvim_repo_check
+      tags:
+        - dev
+        - neovim
+        - config
+
     - name: "Neovim | Clone kickstart.nvim configuration repository"
       # Kickstart.nvim provides:
       # - Pre-configured LSP setup for multiple languages
@@ -89,12 +98,13 @@
       # - Sensible defaults for modern development
       #
       # Repository: https://github.com/nvim-lua/kickstart.nvim
-      # Force: yes ensures clean state on subsequent runs
+      # Only clones on first run; skipped if repo already exists
       ansible.builtin.git:
         repo: https://github.com/nvim-lua/kickstart.nvim.git
         dest: "/home/{{ ansible_user }}/.config/nvim"
         version: master
       become: false
+      when: not nvim_repo_check.stat.exists
       tags:
         - dev
         - neovim
@@ -470,6 +480,255 @@
     - dev
     - claude
     - optional
+
+# -----------------------------------------------------------------------------
+# SECTION 4: Gemini AI CLI Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "Gemini | Install Google Gemini AI CLI tool"
+  community.general.npm:
+    name: "@google/generative-ai"
+    global: yes
+    state: present
+  when: install_gemini | default(false) | bool
+  tags:
+    - dev
+    - gemini
+    - ai
+
+# -----------------------------------------------------------------------------
+# SECTION 5: Kiro Tool Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "Kiro | Install Kiro utility tool"
+  community.general.npm:
+    name: "kiro"
+    global: yes
+    state: present
+  when: install_kiro | default(false) | bool
+  tags:
+    - dev
+    - kiro
+
+# -----------------------------------------------------------------------------
+# SECTION 6: GitHub CLI Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "GitHub CLI | Install GitHub CLI tool (gh)"
+  ansible.builtin.apt:
+    name: gh
+    state: present
+  when: install_github_cli | default(false) | bool
+  tags:
+    - dev
+    - github
+
+# -----------------------------------------------------------------------------
+# SECTION 7: btop System Monitor Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "btop | Install btop modern resource monitor"
+  ansible.builtin.apt:
+    name: btop
+    state: present
+  when: install_btop | default(false) | bool
+  tags:
+    - dev
+    - btop
+
+# -----------------------------------------------------------------------------
+# SECTION 8: tldr Simplified Man Pages Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "tldr | Install tldr simplified man pages"
+  community.general.npm:
+    name: "tldr"
+    global: yes
+    state: present
+  when: install_tldr | default(false) | bool
+  tags:
+    - dev
+    - tldr
+
+# -----------------------------------------------------------------------------
+# SECTION 9: lazygit Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "lazygit | Install lazygit terminal UI for git"
+  block:
+    - name: "lazygit | Get latest version"
+      ansible.builtin.shell: |
+        curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"]*'
+      register: lazygit_version
+      changed_when: false
+
+    - name: "lazygit | Download and install"
+      ansible.builtin.shell: |
+        curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_{{ lazygit_version.stdout }}_Linux_x86_64.tar.gz"
+        tar xf lazygit.tar.gz lazygit
+        install lazygit /usr/local/bin
+        rm lazygit.tar.gz lazygit
+      args:
+        creates: /usr/local/bin/lazygit
+  when: install_lazygit | default(false) | bool
+  tags:
+    - dev
+    - lazygit
+
+# -----------------------------------------------------------------------------
+# SECTION 10: tmux Installation (Optional)
+# -----------------------------------------------------------------------------
+- name: "tmux | Install tmux terminal multiplexer"
+  ansible.builtin.apt:
+    name: tmux
+    state: present
+  when: install_tmux | default(false) | bool
+  tags:
+    - dev
+    - tmux
+
+# -----------------------------------------------------------------------------
+# SECTION 11: ripgrep, fd-find, duf, ncdu, lnav (Modern CLI Utilities)
+# -----------------------------------------------------------------------------
+- name: "Utilities | Install modern CLI replacements (rg, fd, duf, ncdu, lnav, fzf, bat, jq, htop, nmap, autossh, fish, micro, ranger)"
+  ansible.builtin.apt:
+    name:
+      - ripgrep
+      - fd-find
+      - duf
+      - ncdu
+      - lnav
+      - fzf
+      - bat
+      - jq
+      - htop
+      - nmap
+      - autossh
+      - fish
+      - micro
+      - ranger
+    state: present
+  when: (install_ripgrep | bool) or (install_fd | bool) or (install_duf | bool) or (install_ncdu | bool) or (install_lnav | bool) or (install_fzf | bool) or (install_bat | bool) or (install_jq | bool) or (install_htop | bool) or (install_nmap | bool) or (install_autossh | bool) or (install_fish | bool) or (install_micro | bool) or (install_ranger | bool)
+  tags:
+    - dev
+    - utils
+
+# -----------------------------------------------------------------------------
+# SECTION 17: direnv (Environment Switcher)
+# -----------------------------------------------------------------------------
+- name: "direnv | Install direnv"
+  ansible.builtin.shell: curl -sfL https://direnv.net/install.sh | bash
+  args:
+    creates: /usr/local/bin/direnv
+  when: install_direnv | default(false) | bool
+  tags:
+    - dev
+    - direnv
+
+# -----------------------------------------------------------------------------
+# SECTION 18: Starship (Cross-shell Prompt)
+# -----------------------------------------------------------------------------
+- name: "Starship | Install starship prompt"
+  ansible.builtin.shell: curl -sS https://starship.rs/install.sh | sh -s -- -y
+  args:
+    creates: /usr/local/bin/starship
+  when: install_starship | default(false) | bool
+  tags:
+    - dev
+    - starship
+
+# -----------------------------------------------------------------------------
+# SECTION 14: eza (Modern ls replacement)
+# -----------------------------------------------------------------------------
+- name: "eza | Install eza"
+  block:
+    - name: "eza | Add gpg key"
+      ansible.builtin.apt_key:
+        url: https://raw.githubusercontent.com/eza-community/eza/main/deb.asc
+        state: present
+    - name: "eza | Add repository"
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.gjt.me/ stable main"
+        state: present
+    - name: "eza | Install eza"
+      ansible.builtin.apt:
+        name: eza
+        state: present
+  when: install_eza | default(false) | bool
+  tags:
+    - dev
+    - eza
+
+# -----------------------------------------------------------------------------
+# SECTION 15: zoxide (Smarter cd)
+# -----------------------------------------------------------------------------
+- name: "zoxide | Install zoxide"
+  ansible.builtin.shell: curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+  args:
+    creates: "/home/{{ ansible_user }}/.local/bin/zoxide"
+  become: false
+  when: install_zoxide | default(false) | bool
+  tags:
+    - dev
+    - zoxide
+
+# -----------------------------------------------------------------------------
+# SECTION 16: gping (Visual ping)
+# -----------------------------------------------------------------------------
+- name: "gping | Install gping"
+  block:
+    - name: "gping | Add gpg key"
+      ansible.builtin.apt_key:
+        url: https://raw.githubusercontent.com/orf/gping/master/gping.gpg
+        state: present
+    - name: "gping | Add repository"
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.gjt.me/ stable main"
+        state: present
+    - name: "gping | Install gping"
+      ansible.builtin.apt:
+        name: gping
+        state: present
+  when: install_gping | default(false) | bool
+  tags:
+    - dev
+    - gping
+
+# -----------------------------------------------------------------------------
+# SECTION 12: uv (Fast Python Package Manager)
+# -----------------------------------------------------------------------------
+- name: "uv | Install uv Python package manager"
+  ansible.builtin.shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+  args:
+    creates: "/home/{{ ansible_user }}/.cargo/bin/uv"
+  become: false
+  when: install_uv | default(false) | bool
+  tags:
+    - dev
+    - uv
+
+# -----------------------------------------------------------------------------
+# SECTION 13: Zsh & Oh My Zsh (Optional)
+# -----------------------------------------------------------------------------
+- name: "Zsh | Install Zsh and Oh My Zsh"
+  block:
+    - name: "Zsh | Install Zsh package"
+      ansible.builtin.apt:
+        name: zsh
+        state: present
+
+    - name: "Zsh | Check if Oh My Zsh is installed"
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user }}/.oh-my-zsh"
+      register: omz_check
+
+    - name: "Zsh | Install Oh My Zsh"
+      ansible.builtin.shell: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+      become: false
+      when: not omz_check.stat.exists
+
+    - name: "Zsh | Set Zsh as default shell"
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        shell: /usr/bin/zsh
+  when: install_zsh | default(false) | bool
+  tags:
+    - dev
+    - zsh
 
 # =============================================================================
 # DEVELOPMENT TOOLS USAGE TIPS

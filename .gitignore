@@ -128,11 +128,14 @@ password.txt
 .AppleDouble
 .LSOverride
 
-# History files
+# History files (may contain sensitive data)
+.history/
 .history/.venv/
 
-# GUI configuration cache
+# GUI configuration cache (contains sensitive data)
 .gui_config_cache.json
+.ansible_provisioning_cache.json
+*_cache.json
 
 # Rust launcher
 launcher/target/
@@ -147,3 +150,21 @@ rustsible-gui
 # Provisioning logs
 provisioning.log
 .ansible-retry/
+app_crash.log
+
+# Test scripts
+test_*.sh
+test-*.sh
+run_and_log.sh
+monitor_app.sh
+
+# Crash logs
+crash.log
+*.crash
+app_crash.log
+
+# Sensitive documentation (may contain examples with real data)
+*_VERIFICATION.md
+TEST_*.md
+PERSISTENCE_*.md
+

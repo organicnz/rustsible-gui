@@ -90,83 +90,86 @@
 # Creates non-root user with sudo privileges for secure system administration.
 # Implements principle of least privilege by using wheel group for sudo access.
 
-- name: "User Management | Create 'wheel' group for sudo access"
-  # The wheel group is a standard Unix convention for users with sudo privileges.
-  # This provides better organization than adding users individually to sudoers.
-  ansible.builtin.group:
-    name: wheel
-    state: present
-  tags:
-    - user
-    - security
-    - sudo
-    - groups
+- name: "User Management | Administrative User Setup"
+  when: create_user | default(true) | bool
+  block:
+    - name: "User Management | Create 'wheel' group for sudo access"
+      # The wheel group is a standard Unix convention for users with sudo privileges.
+      # This provides better organization than adding users individually to sudoers.
+      ansible.builtin.group:
+        name: wheel
+        state: present
+      tags:
+        - user
+        - security
+        - sudo
+        - groups
 
-- name: "User Management | Configure passwordless sudo for wheel group"
-  # Passwordless sudo is acceptable when combined with SSH key authentication.
-  # This enables automation while maintaining security through key-based access.
-  ansible.builtin.lineinfile:
-    path: /etc/sudoers
-    state: present
-    regexp: '^(%wheel|%@includedir)'
-    line: '%wheel ALL=(ALL:ALL) NOPASSWD: ALL'
-    validate: '/usr/sbin/visudo -cf %s'
-  tags:
-    - user
-    - security
-    - sudo
+    - name: "User Management | Configure passwordless sudo for wheel group"
+      # Passwordless sudo is acceptable when combined with SSH key authentication.
+      # This enables automation while maintaining security through key-based access.
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^(%wheel|%@includedir)'
+        line: '%wheel ALL=(ALL:ALL) NOPASSWD: ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+      tags:
+        - user
+        - security
+        - sudo
 
-- name: "User Management | Create non-root user '{{ added_user }}' with sudo privileges"
-  # Creates the primary administrative user account.
-  # Replaces direct root login with a named user for better auditability.
-  ansible.builtin.user:
-    name: "{{ added_user }}"
-    state: present
-    groups: wheel
-    append: true
-    create_home: true
-    shell: /bin/bash
-  tags:
-    - user
-    - create-user
+    - name: "User Management | Create non-root user '{{ added_user }}' with sudo privileges"
+      # Creates the primary administrative user account.
+      # Replaces direct root login with a named user for better auditability.
+      ansible.builtin.user:
+        name: "{{ added_user }}"
+        state: present
+        groups: wheel
+        append: true
+        create_home: true
+        shell: /bin/bash
+      tags:
+        - user
+        - create-user
 
-- name: "User Management | Deploy SSH public key for {{ added_user }}"
-  # SSH key-based authentication is more secure than password authentication.
-  # Prevents brute-force attacks and enables passwordless automation.
-  ansible.builtin.authorized_key:
-    user: "{{ added_user }}"
-    state: present
-    key: "{{ copy_local_key }}"
-  tags:
-    - user
-    - security
-    - ssh-keys
+    - name: "User Management | Deploy SSH public key for {{ added_user }}"
+      # SSH key-based authentication is more secure than password authentication.
+      # Prevents brute-force attacks and enables passwordless automation.
+      ansible.builtin.authorized_key:
+        user: "{{ added_user }}"
+        state: present
+        key: "{{ copy_local_key }}"
+      tags:
+        - user
+        - security
+        - ssh-keys
 
-- name: "User Management | Set secure password for {{ added_user }}"
-  # Backup authentication method in case SSH keys are unavailable.
-  # Password is stored as SHA-512 hash for security.
-  ansible.builtin.user:
-    name: "{{ added_user }}"
-    state: present
-    password: "{{ user_password | password_hash('sha512') }}"
-  tags:
-    - user
-    - security
-    - password
+    - name: "User Management | Set secure password for {{ added_user }}"
+      # Backup authentication method in case SSH keys are unavailable.
+      # Password is stored as SHA-512 hash for security.
+      ansible.builtin.user:
+        name: "{{ added_user }}"
+        state: present
+        password: "{{ user_password | password_hash('sha512') }}"
+      tags:
+        - user
+        - security
+        - password
 
-- name: "User Management | Add {{ added_user }} to sudoers with NOPASSWD"
-  # Redundant sudo configuration for compatibility with different Linux distributions.
-  # Ensures user has sudo access even if wheel group method doesn't work.
-  ansible.builtin.lineinfile:
-    path: /etc/sudoers
-    regexp: "{{ added_user }} ALL"
-    line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
-    state: present
-    validate: '/usr/sbin/visudo -cf %s'
-  tags:
-    - user
-    - security
-    - sudo
+    - name: "User Management | Add {{ added_user }} to sudoers with NOPASSWD"
+      # Redundant sudo configuration for compatibility with different Linux distributions.
+      # Ensures user has sudo access even if wheel group method doesn't work.
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: "{{ added_user }} ALL"
+        line: "{{ added_user }} ALL = (ALL) NOPASSWD: ALL"
+        state: present
+        validate: '/usr/sbin/visudo -cf %s'
+      tags:
+        - user
+        - security
+        - sudo
 
 # -----------------------------------------------------------------------------
 # SECTION 4: Package Management and System Updates

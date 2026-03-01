@@ -36,18 +36,19 @@
     - swap-info
 
 - name: "Memory Analysis | Calculate appropriate swap size using intelligent algorithm"
-  # Implements industry best practices for swap sizing:
-  # - Very small systems (< 2GB): Need large swap for memory pressure
-  # - Small systems (2-4GB): Moderate swap for occasional pressure
-  # - Medium systems (4-8GB): Equal swap primarily for hibernation
-  # - Large systems (8GB+): Minimal swap, rarely used
+  # Improved precision: Use MB for calculation to handle small systems correctly.
+  # - Systems with <2GB RAM:  2x RAM
+  # - Systems with 2-4GB RAM: 1.5x RAM
+  # - Systems with 4GB+ RAM:   1x RAM
+  # - Minimum swap: 1024 MB (1GB)
   ansible.builtin.set_fact:
-    swap_size_gb: >-
+    swap_size_mb: >-
       {{
-        (mem_total_gb | int * 2) if (mem_total_gb | int) < 2 else
-        (mem_total_gb | int * 1.5) | round(0) | int if (mem_total_gb | int) < 4 else
-        (mem_total_gb | int) if (mem_total_gb | int) < 8 else
-        (mem_total_gb | int)
+        [(
+          (mem_total_mb | int * 2) if (mem_total_mb | int) < 2048 else
+          (mem_total_mb | int * 1.5) | round(0) | int if (mem_total_mb | int) < 4096 else
+          (mem_total_mb | int)
+        ), 1024] | max
       }}
   tags:
     - swap
@@ -59,8 +60,6 @@
 # Checks if swap file exists and determines if resize is needed.
 
 - name: "Swap Status | Check if swap file already exists at /swapfile"
-  # Determines if we need to create or resize swap file.
-  # Important for idempotency - don't recreate if correct size exists.
   ansible.builtin.stat:
     path: /swapfile
   register: swap_file_check
@@ -70,16 +69,12 @@
 
 - name: "Swap Status | Get current swap file size in MB"
   ansible.builtin.set_fact:
-    current_swap_size:
-      stdout: "{{ (swap_file_check.stat.size / 1048576) | int }}"
-  when: swap_file_check.stat.exists
+    current_swap_size_mb: "{{ (swap_file_check.stat.size / 1048576) | int if swap_file_check.stat.exists else 0 }}"
   tags:
     - swap
     - swap-info
 
 - name: "Swap Status | Check if swap is currently active"
-  # Verifies if any swap devices are currently in use.
-  # Needed to determine if we need to run swapoff before modifying.
   command: swapon -s
   register: swap_active
   changed_when: false
@@ -88,18 +83,16 @@
     - swap-info
 
 - name: "Swap Info | Display swap configuration details and planned actions"
-  # Provides transparency about what will happen during swap configuration.
-  # Helps users understand sizing decisions and planned modifications.
   ansible.builtin.debug:
     msg:
       - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       - "SWAP CONFIGURATION ANALYSIS"
       - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      - "System Memory: {{ mem_total_mb }} MB ({{ mem_total_gb }} GB)"
-      - "Calculated Swap Size: {{ swap_size_gb }} GB ({{ swap_size_gb | int * 1024 }} MB)"
-      - "{% if swap_file_check.stat.exists %}Current Swap File: {{ current_swap_size.stdout | default('0') }} MB{% else %}No existing swap file found{% endif %}"
+      - "System Memory: {{ mem_total_mb }} MB"
+      - "Calculated Swap Size: {{ swap_size_mb }} MB"
+      - "{% if swap_file_check.stat.exists %}Current Swap File: {{ current_swap_size_mb }} MB{% else %}No existing swap file found{% endif %}"
       - "Swap Status: {% if swap_active.stdout.find('/swapfile') != -1 %}ACTIVE{% else %}INACTIVE{% endif %}"
-      - "Action: {% if swap_file_check.stat.exists and (current_swap_size.stdout | int) != (swap_size_gb | int * 1024) %}RESIZE (recreate swap file){% elif not swap_file_check.stat.exists %}CREATE (new swap file){% else %}KEEP (correct size exists){% endif %}"
+      - "Action: {% if current_swap_size_mb | int != swap_size_mb | int or current_swap_size_mb | int == 0 %}RESIZE/CREATE (target: {{ swap_size_mb }} MB){% else %}KEEP (correct size exists){% endif %}"
       - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   tags:
     - swap
@@ -113,67 +106,51 @@
 - name: "Swap Configuration | Complete swap setup with error handling"
   block:
     - name: "Swap Disable | Turn off existing swap before modification"
-      # Must disable swap before modifying the swap file.
-      # Only runs if swap is active AND needs resizing.
-      # Prevents "device or resource busy" errors.
       command: swapoff /swapfile
       when:
         - swap_file_check.stat.exists
         - swap_active.stdout.find('/swapfile') != -1
-        - (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+        - (current_swap_size_mb | int != swap_size_mb | int or current_swap_size_mb | int == 0)
       tags:
         - swap-create
 
     - name: "Swap Cleanup | Remove existing swap file for resize"
-      # Deletes old swap file before creating new one with different size.
-      # Only runs when size adjustment is needed.
-      # Ensures clean slate for new swap file creation.
       ansible.builtin.file:
         path: /swapfile
         state: absent
       when:
         - swap_file_check.stat.exists
-        - (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+        - (current_swap_size_mb | int != swap_size_mb | int or current_swap_size_mb | int == 0)
       tags:
         - swap-create
 
     - name: "Swap Creation | Allocate swap file using dd command"
-      # Creates swap file using dd for precise size control.
-      # bs=1M: 1MB block size for efficient writing
-      # count: Number of 1MB blocks to write (size in GB * 1024)
-      # Creates contiguous file for better performance.
-      # IMPORTANT: This task can take several minutes on large files!
-      command: "dd if=/dev/zero of=/swapfile bs=1M count={{ swap_size_gb | int * 1024 }}"
+      command: "dd if=/dev/zero of=/swapfile bs=1M count={{ swap_size_mb }}"
+      register: swap_file_created
       when:
-        - not swap_file_check.stat.exists or (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+        - current_swap_size_mb | int != swap_size_mb | int or current_swap_size_mb | int == 0
       tags:
         - swap-create
 
     - name: "Swap Security | Set restrictive permissions on swap file"
-      # Sets 0600 (rw-------) permissions on swap file.
-      # Critical security requirement: swap may contain sensitive data from memory.
-      # Only root should be able to read/write swap file.
       ansible.builtin.file:
         path: /swapfile
         mode: '0600'
+        owner: root
+        group: root
       tags:
         - swap-create
         - security
 
-    - name: "Swap Format | Initialize swap area on new file"
-      # Formats the file as swap space using mkswap.
-      # Creates swap signature and sets up swap area structure.
-      # Only runs when swap file is newly created or resized.
+    - name: "Swap Format | Initialize swap area on file"
+      # Always format if we just created it or if it exists but isn't active.
+      # This fixes the 'read swap header failed' error.
       command: mkswap /swapfile
-      when:
-        - not swap_file_check.stat.exists or (current_swap_size.stdout | int) != (swap_size_gb | int * 1024)
+      when: swap_file_created is changed or swap_active.stdout.find('/swapfile') == -1
       tags:
         - swap-create
 
     - name: "Swap Activation | Enable swap file for immediate use"
-      # Activates swap file with swapon command.
-      # Only runs if swap is not already active.
-      # Makes swap available immediately without reboot.
       command: swapon /swapfile
       when: swap_active.stdout.find('/swapfile') == -1
       tags:

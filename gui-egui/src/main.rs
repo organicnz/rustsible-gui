@@ -1,48 +1,21 @@
-use eframe::egui;
-use serde::{Deserialize, Serialize};
-use std::fs;
+use eframe::egui::{self, Color32, Stroke, StrokeKind, CornerRadius, RichText, Margin};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-// macOS dark theme system colors (NSColor equivalents)
-mod macos_colors {
-    use eframe::egui::Color32;
+mod config;
+mod style;
 
-    // Standard macOS dark mode backgrounds
-    pub const WINDOW_BG: Color32 = Color32::from_rgb(30, 30, 30);
-    pub const SIDEBAR_BG: Color32 = Color32::from_rgb(45, 45, 47);
-    pub const TOOLBAR_BG: Color32 = Color32::from_rgb(38, 38, 40);
-    pub const GROUPED_BG: Color32 = Color32::from_rgb(44, 44, 46);
-    pub const TERMINAL_BG: Color32 = Color32::from_rgb(24, 24, 24);
-
-    // Text (NSColor.label equivalents)
-    pub const LABEL_PRIMARY: Color32 = Color32::WHITE;
-    pub const LABEL_SECONDARY: Color32 = Color32::from_rgb(152, 152, 157);
-    pub const LABEL_TERTIARY: Color32 = Color32::from_rgb(99, 99, 102);
-
-    // Accent
-    pub const ACCENT_BLUE: Color32 = Color32::from_rgb(10, 132, 255);
-
-    // Status (NSColor.system* equivalents)
-    pub const SYSTEM_RED: Color32 = Color32::from_rgb(255, 69, 58);
-    pub const SYSTEM_GREEN: Color32 = Color32::from_rgb(48, 209, 88);
-    pub const SYSTEM_YELLOW: Color32 = Color32::from_rgb(255, 214, 10);
-    pub const SYSTEM_ORANGE: Color32 = Color32::from_rgb(255, 159, 10);
-    pub const SYSTEM_CYAN: Color32 = Color32::from_rgb(100, 210, 255);
-    pub const SYSTEM_PURPLE: Color32 = Color32::from_rgb(191, 90, 242);
-
-    // Borders
-    pub const SEPARATOR: Color32 = Color32::from_rgb(56, 56, 58);
-    pub const SELECTED_CONTENT_BG: Color32 = Color32::from_rgb(0, 88, 208);
-}
+use config::{ProvisioningConfig, load_cache, save_cache};
+use style::{macos_v26_colors, setup_macos_v26_style, crystal_card, ansible_line_style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NavSection {
@@ -50,118 +23,27 @@ enum NavSection {
     Features,
     Security,
     Maintenance,
-    Tasks,
     Output,
 }
 
 impl NavSection {
     fn label(&self) -> &'static str {
         match self {
-            NavSection::Connection => "Connection",
-            NavSection::Features => "Features",
-            NavSection::Security => "Security",
-            NavSection::Maintenance => "Maintenance",
-            NavSection::Tasks => "Tasks",
-            NavSection::Output => "Output",
+            NavSection::Connection => "GATEWAY",
+            NavSection::Features => "ASSETS",
+            NavSection::Security => "SHIELD",
+            NavSection::Maintenance => "NUCLEUS",
+            NavSection::Output => "STREAM",
         }
     }
-}
 
-fn default_true() -> bool {
-    true
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ProvisioningConfig {
-    ip_address: String,
-    ssh_user: String,
-    ssh_key_path: String,
-    hostname: String,
-    fail2ban: bool,
-    docker: bool,
-    swap: bool,
-    lemp: bool,
-    devtools: bool,
-    wordpress: bool,
-    certbot: bool,
-    system_hardening: bool,
-    apparmor: bool,
-    rootkit_detection: bool,
-    file_integrity: bool,
-    audit_logging: bool,
-    log_monitoring: bool,
-    advanced_protection: bool,
-    #[serde(default)]
-    ssh_2fa_totp: bool,
-    #[serde(default)]
-    ssh_2fa_fido2: bool,
-    #[serde(default)]
-    ssh_2fa_duo: bool,
-    #[serde(default)]
-    backups: bool,
-    #[serde(default)]
-    usb_restrictions: bool,
-    // Devtools sub-tasks
-    #[serde(default = "default_true")]
-    install_neovim: bool,
-    #[serde(default = "default_true")]
-    install_nodejs: bool,
-    #[serde(default = "default_true")]
-    install_claude_code: bool,
-    // Extra security tasks
-    #[serde(default)]
-    secure_shm: bool,
-    #[serde(default)]
-    lynis: bool,
-    #[serde(default)]
-    disable_ipv6: bool,
-    #[serde(default)]
-    suricata: bool,
-    cron_jobs: bool,
-    periodic_reboot: bool,
-    reboot_hour: String,
-}
-
-impl Default for ProvisioningConfig {
-    fn default() -> Self {
-        let default_key_path = dirs::home_dir()
-            .map(|p| p.join(".ssh/id_rsa").to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        Self {
-            ip_address: String::new(),
-            ssh_user: "root".to_string(),
-            ssh_key_path: default_key_path,
-            hostname: String::new(),
-            fail2ban: true,
-            docker: true,
-            swap: true,
-            lemp: false,
-            devtools: true,
-            wordpress: false,
-            certbot: false,
-            system_hardening: false,
-            apparmor: false,
-            rootkit_detection: false,
-            file_integrity: false,
-            audit_logging: false,
-            log_monitoring: false,
-            advanced_protection: false,
-            ssh_2fa_totp: false,
-            ssh_2fa_fido2: false,
-            ssh_2fa_duo: false,
-            backups: false,
-            usb_restrictions: false,
-            install_neovim: true,
-            install_nodejs: true,
-            install_claude_code: true,
-            secure_shm: false,
-            lynis: false,
-            disable_ipv6: false,
-            suricata: false,
-            cron_jobs: true,
-            periodic_reboot: false,
-            reboot_hour: "3".to_string(),
+    fn icon(&self) -> &'static str {
+        match self {
+            NavSection::Connection => "🌐", 
+            NavSection::Features => "📦",   
+            NavSection::Security => "🔒",   
+            NavSection::Maintenance => "🛠", 
+            NavSection::Output => "📝",     
         }
     }
 }
@@ -175,17 +57,16 @@ enum ProvisioningMessage {
 struct AnsibleProvisioningApp {
     config: ProvisioningConfig,
     provisioning: bool,
+    testing_connection: bool,
     output_lines: Vec<String>,
     result_message: Option<String>,
     error_message: Option<String>,
+    connection_test_result: Option<String>,
     rx: Option<Receiver<ProvisioningMessage>>,
-    // Thread lifecycle management
     thread_handle: Option<thread::JoinHandle<()>>,
     shutdown_signal: Arc<AtomicBool>,
     child_pid: Arc<AtomicU32>,
-    // Signal handling for graceful shutdown
     term_signal: Arc<AtomicBool>,
-    // Navigation
     selected_section: NavSection,
 }
 
@@ -195,9 +76,11 @@ impl Default for AnsibleProvisioningApp {
         Self {
             config,
             provisioning: false,
+            testing_connection: false,
             output_lines: Vec::new(),
             result_message: None,
             error_message: None,
+            connection_test_result: None,
             rx: None,
             thread_handle: None,
             shutdown_signal: Arc::new(AtomicBool::new(false)),
@@ -210,20 +93,23 @@ impl Default for AnsibleProvisioningApp {
 
 impl AnsibleProvisioningApp {
     fn new(cc: &eframe::CreationContext<'_>, term_signal: Arc<AtomicBool>) -> Self {
-        setup_custom_style(&cc.egui_ctx);
+        setup_macos_v26_style(&cc.egui_ctx);
         let mut app = Self::default();
         app.term_signal = term_signal;
         app
     }
 
     fn launch_provisioning(&mut self) {
+        // Clean up any previous state first
+        self.cleanup();
+        
         self.provisioning = true;
+        self.testing_connection = false;
         self.output_lines.clear();
         self.result_message = None;
         self.error_message = None;
         self.selected_section = NavSection::Output;
 
-        // Reset shutdown signal for new provisioning run
         self.shutdown_signal.store(false, Ordering::SeqCst);
         self.child_pid.store(0, Ordering::SeqCst);
 
@@ -234,1471 +120,938 @@ impl AnsibleProvisioningApp {
         let shutdown_signal = Arc::clone(&self.shutdown_signal);
         let child_pid = Arc::clone(&self.child_pid);
 
+        // Save cache before starting
+        if let Err(e) = save_cache(&config) {
+            let _ = tx.send(ProvisioningMessage::Error(format!("Failed to save config: {}", e)));
+        }
+
         let handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                if let Err(e) = run_provisioning(config, tx.clone(), shutdown_signal.clone(), child_pid.clone()).await {
-                    let _ = tx.send(ProvisioningMessage::Error(e));
+            let rt_res = tokio::runtime::Runtime::new();
+            match rt_res {
+                Ok(rt) => {
+                    rt.block_on(async {
+                        let _ = tx.send(ProvisioningMessage::Output("🚀 Initializing provisioning...".into()));
+                        
+                        match run_provisioning(config, tx.clone(), shutdown_signal.clone(), child_pid.clone()).await {
+                            Ok(_) => {
+                                let _ = tx.send(ProvisioningMessage::Output("✅ Provisioning completed successfully".into()));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(ProvisioningMessage::Error(format!("❌ Provisioning failed: {}", e)));
+                                let _ = tx.send(ProvisioningMessage::Complete(false));
+                            }
+                        }
+                    });
+                    
+                    // Graceful shutdown with timeout
+                    rt.shutdown_timeout(Duration::from_secs(5));
+                }
+                Err(e) => {
+                    let _ = tx.send(ProvisioningMessage::Error(format!("Failed to create Tokio runtime: {}", e)));
                     let _ = tx.send(ProvisioningMessage::Complete(false));
                 }
-            });
-            // Properly shutdown tokio runtime
-            rt.shutdown_timeout(Duration::from_secs(2));
+            }
         });
 
         self.thread_handle = Some(handle);
     }
 
-    /// Performs comprehensive cleanup of threads and child processes
+    fn test_connection(&mut self) {
+        self.testing_connection = true;
+        self.connection_test_result = None;
+
+        let config = self.config.clone();
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+
+        // Save cache before testing
+        let _ = save_cache(&config);
+
+        let _handle = std::thread::spawn(move || {
+            let rt_res = tokio::runtime::Runtime::new();
+            if let Ok(rt) = rt_res {
+                rt.block_on(async {
+                    let key_path = if config.ssh_key_path.starts_with("~/") {
+                        dirs::home_dir().unwrap().join(&config.ssh_key_path[2..])
+                    } else {
+                        PathBuf::from(&config.ssh_key_path)
+                    };
+
+                    if !key_path.exists() {
+                        let _ = tx.send(ProvisioningMessage::Error(format!("Key not found: {}", key_path.display())));
+                        let _ = tx.send(ProvisioningMessage::Complete(false));
+                        return;
+                    }
+
+                    let mut auth_sock: Option<String> = None;
+                    let mut agent_pid: Option<String> = None;
+
+                    if !config.ssh_key_passphrase.is_empty() {
+                        match setup_ssh_agent(&key_path, &config.ssh_key_passphrase).await {
+                            Ok((socket, pid)) => {
+                                auth_sock = Some(socket);
+                                agent_pid = Some(pid);
+                            },
+                            Err(e) => {
+                                let _ = tx.send(ProvisioningMessage::Error(format!("Agent Error: {}", e)));
+                                let _ = tx.send(ProvisioningMessage::Complete(false));
+                                return;
+                            }
+                        }
+                    }
+
+                    let mut cmd = Command::new("ssh");
+                    cmd.arg("-o").arg("BatchMode=yes");
+                    cmd.arg("-o").arg("ConnectTimeout=10");
+                    cmd.arg("-o").arg("StrictHostKeyChecking=no");
+                    if let Some(sock) = &auth_sock {
+                        cmd.env("SSH_AUTH_SOCK", sock);
+                    }
+                    cmd.arg("-i").arg(&key_path);
+                    cmd.arg(format!("{}@{}", config.ssh_user, config.ip_address));
+                    cmd.arg("echo 'Online'");
+                    
+                    match cmd.output().await {
+                        Ok(output) => {
+                            if output.status.success() {
+                                let _ = tx.send(ProvisioningMessage::Complete(true));
+                            } else {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                let _ = tx.send(ProvisioningMessage::Error(format!("SSH Denied: {}", stderr.trim())));
+                                let _ = tx.send(ProvisioningMessage::Complete(false));
+                            }
+                        },
+                        Err(e) => {
+                            let _ = tx.send(ProvisioningMessage::Error(format!("Exec Failed: {}", e)));
+                            let _ = tx.send(ProvisioningMessage::Complete(false));
+                        }
+                    };
+
+                    if let Some(pid) = agent_pid {
+                        let _ = std::process::Command::new("kill").arg("-9").arg(pid).status();
+                    }
+                });
+            }
+        });
+    }
+
     fn cleanup(&mut self) {
-        println!("Starting comprehensive cleanup...");
-
-        // Set shutdown signal
+        // Signal shutdown
         self.shutdown_signal.store(true, Ordering::SeqCst);
-
-        // Kill ansible-playbook child process if running
+        
+        // Kill child process if running
         let pid = self.child_pid.load(Ordering::SeqCst);
         if pid != 0 {
-            println!("Killing ansible-playbook child process (PID: {})...", pid);
             #[cfg(unix)]
             {
+                // Try graceful termination first (SIGTERM)
+                let _ = std::process::Command::new("kill")
+                    .arg(pid.to_string())
+                    .status();
+                
+                // Wait a bit for graceful shutdown
+                std::thread::sleep(Duration::from_millis(500));
+                
+                // Force kill if still running (SIGKILL)
                 let _ = std::process::Command::new("kill")
                     .arg("-9")
                     .arg(pid.to_string())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-            #[cfg(windows)]
-            {
-                let _ = std::process::Command::new("taskkill")
-                    .arg("/F")
-                    .arg("/PID")
-                    .arg(pid.to_string())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
                     .status();
             }
             self.child_pid.store(0, Ordering::SeqCst);
         }
-
-        // Join background thread with timeout
+        
+        // Wait for thread to finish
         if let Some(handle) = self.thread_handle.take() {
-            println!("Joining background thread...");
-            match handle.join() {
-                Ok(_) => println!("Background thread joined successfully"),
-                Err(e) => println!("Warning: Thread join failed: {:?}", e),
-            }
+            let _ = handle.join();
         }
+        
+        // Clear receiver
+        self.rx = None;
+    }
 
-        println!("Cleanup completed");
+    fn render_v26_header(&self, ui: &mut egui::Ui, title: &str, subtitle: &str) {
+        ui.vertical(|ui| {
+            ui.add_space(12.0);
+            ui.label(RichText::new(title).size(38.0).strong().color(macos_v26_colors::TEXT_BRIGHT).extra_letter_spacing(-0.8));
+            ui.label(RichText::new(subtitle).size(15.0).color(macos_v26_colors::ACCENT_LIGHT).extra_letter_spacing(0.5));
+        });
+        ui.add_space(36.0);
     }
 
     fn render_connection(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Connection")
-            .size(15.0)
-            .strong()
-            .color(macos_colors::LABEL_PRIMARY));
-        ui.add_space(8.0);
+            self.render_v26_header(ui, "Core Gateway", "Establish secure infrastructure synchronization.");
 
-        ui.label(egui::RichText::new("Server Address (IP or DNS)")
-            .size(12.0)
-            .color(macos_colors::LABEL_SECONDARY));
-        ui.add_space(2.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut self.config.ip_address)
-                .desired_width(f32::INFINITY)
-                .font(egui::FontId::proportional(13.0))
-        );
-        ui.add_space(8.0);
+            let mut config_changed = false;
 
-        ui.label(egui::RichText::new("SSH User")
-            .size(12.0)
-            .color(macos_colors::LABEL_SECONDARY));
-        ui.add_space(2.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut self.config.ssh_user)
-                .desired_width(f32::INFINITY)
-                .font(egui::FontId::proportional(13.0))
-        );
-        ui.add_space(8.0);
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                egui::Grid::new("conn_grid").spacing([32.0, 24.0]).show(ui, |ui| {
+                    ui.label(RichText::new("PROTOCOL HOST").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
+                    if ui.add(egui::TextEdit::singleline(&mut self.config.ip_address).desired_width(450.0)).changed() {
+                        config_changed = true;
+                    }
+                    ui.end_row();
 
-        ui.label(egui::RichText::new("SSH Private Key Path")
-            .size(12.0)
-            .color(macos_colors::LABEL_SECONDARY));
-        ui.add_space(2.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut self.config.ssh_key_path)
-                .desired_width(f32::INFINITY)
-                .font(egui::FontId::proportional(13.0))
-        );
-        ui.label(egui::RichText::new("Supports ~ for home directory")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(8.0);
+                    ui.label(RichText::new("IDENTITY").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
+                    if ui.add(egui::TextEdit::singleline(&mut self.config.ssh_user).desired_width(450.0)).changed() {
+                        config_changed = true;
+                    }
+                    ui.end_row();
 
-        ui.label(egui::RichText::new("Hostname (optional)")
-            .size(12.0)
-            .color(macos_colors::LABEL_SECONDARY));
-        ui.add_space(2.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut self.config.hostname)
-                .desired_width(f32::INFINITY)
-                .font(egui::FontId::proportional(13.0))
-        );
-    }
+                    ui.label(RichText::new("PASSWORD").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
+                    if ui.add(egui::TextEdit::singleline(&mut self.config.connection_password).desired_width(450.0).password(true)).changed() {
+                        config_changed = true;
+                    }
+                    ui.end_row();
 
-    fn render_features(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Features")
-            .size(15.0)
-            .strong()
-            .color(macos_colors::LABEL_PRIMARY));
-        ui.add_space(8.0);
-
-        ui.checkbox(&mut self.config.fail2ban, egui::RichText::new("Fail2ban Intrusion Prevention").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.docker, egui::RichText::new("Docker & Docker Compose").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.swap, egui::RichText::new("Swap Memory (auto-sized)").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.lemp, egui::RichText::new("LEMP Stack (Nginx, MySQL, PHP)").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.devtools, egui::RichText::new("Development Tools (Neovim, Node.js, Claude Code)").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.wordpress, egui::RichText::new("WordPress CMS").size(13.0));
-        ui.add_space(2.0);
-        ui.checkbox(&mut self.config.certbot, egui::RichText::new("Certbot SSL/TLS Certificates").size(13.0));
-    }
-
-    fn render_security(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Security")
-            .size(15.0)
-            .strong()
-            .color(macos_colors::LABEL_PRIMARY));
-        ui.add_space(8.0);
-
-        ui.checkbox(&mut self.config.system_hardening, egui::RichText::new("System Hardening").size(13.0));
-        ui.label(egui::RichText::new("   Kernel hardening, secure shared memory")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.apparmor, egui::RichText::new("AppArmor Enforcement").size(13.0));
-        ui.label(egui::RichText::new("   Mandatory access control")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.rootkit_detection, egui::RichText::new("Rootkit Detection (rkhunter)").size(13.0));
-        ui.label(egui::RichText::new("   Daily scans for malware")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.file_integrity, egui::RichText::new("File Integrity Monitoring (AIDE)").size(13.0));
-        ui.label(egui::RichText::new("   Tracks unauthorized file changes")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.audit_logging, egui::RichText::new("Audit Logging (auditd)").size(13.0));
-        ui.label(egui::RichText::new("   System call auditing")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.log_monitoring, egui::RichText::new("Log Monitoring (Logwatch)").size(13.0));
-        ui.label(egui::RichText::new("   Daily log analysis reports")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.ssh_2fa_totp, egui::RichText::new("SSH 2FA: TOTP").size(13.0));
-        ui.label(egui::RichText::new("   Authy, Google Authenticator, 1Password, etc.")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.ssh_2fa_fido2, egui::RichText::new("SSH 2FA: FIDO2 / YubiKey").size(13.0));
-        ui.label(egui::RichText::new("   Hardware security key authentication")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.ssh_2fa_duo, egui::RichText::new("SSH 2FA: Duo Security").size(13.0));
-        ui.label(egui::RichText::new("   Duo push notifications for SSH")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.backups, egui::RichText::new("Automated Backups").size(13.0));
-        ui.add_space(4.0);
-
-        ui.checkbox(&mut self.config.usb_restrictions, egui::RichText::new("USB Restrictions").size(13.0));
-        ui.label(egui::RichText::new("   Block unauthorized USB devices")
-            .size(11.0)
-            .color(macos_colors::LABEL_TERTIARY));
-    }
-
-    fn render_maintenance(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Maintenance")
-            .size(15.0)
-            .strong()
-            .color(macos_colors::LABEL_PRIMARY));
-        ui.add_space(8.0);
-
-        ui.checkbox(&mut self.config.cron_jobs, egui::RichText::new("Automated Updates & Cron Jobs").size(13.0));
-        ui.add_space(4.0);
-        ui.checkbox(&mut self.config.periodic_reboot, egui::RichText::new("Periodic System Reboot").size(13.0));
-
-        if self.config.periodic_reboot {
-            ui.add_space(8.0);
-
-            ui.label(egui::RichText::new("Reboot Schedule")
-                .size(12.0)
-                .color(macos_colors::LABEL_SECONDARY));
-            ui.add_space(2.0);
-            egui::ComboBox::from_id_salt("reboot_hour")
-                .selected_text(egui::RichText::new(format_reboot_schedule(&self.config.reboot_hour)).size(13.0))
-                .width(ui.available_width())
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.config.reboot_hour, "1".to_string(), "Daily at 1:00 AM");
-                    ui.selectable_value(&mut self.config.reboot_hour, "2".to_string(), "Daily at 2:00 AM");
-                    ui.selectable_value(&mut self.config.reboot_hour, "3".to_string(), "Daily at 3:00 AM");
-                    ui.selectable_value(&mut self.config.reboot_hour, "4".to_string(), "Daily at 4:00 AM");
-                    ui.selectable_value(&mut self.config.reboot_hour, "5".to_string(), "Daily at 5:00 AM");
-                    ui.selectable_value(&mut self.config.reboot_hour, "*/6".to_string(), "Every 6 hours");
-                    ui.selectable_value(&mut self.config.reboot_hour, "*/12".to_string(), "Every 12 hours");
-                    ui.selectable_value(&mut self.config.reboot_hour, "*/24".to_string(), "Every 24 hours");
-                });
-        }
-    }
-
-    fn render_tasks(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Tasks")
-            .size(15.0)
-            .strong()
-            .color(macos_colors::LABEL_PRIMARY));
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new("Fine-grained control over all provisioning tasks")
-            .size(12.0)
-            .color(macos_colors::LABEL_TERTIARY));
-        ui.add_space(8.0);
-
-        // Select All / Deselect All buttons
-        ui.horizontal(|ui| {
-            if ui.add(egui::Button::new(
-                egui::RichText::new("Select All").size(12.0)
-            ).corner_radius(6.0)).clicked() {
-                self.config.swap = true;
-                self.config.cron_jobs = true;
-                self.config.fail2ban = true;
-                self.config.docker = true;
-                self.config.lemp = true;
-                self.config.devtools = true;
-                self.config.install_neovim = true;
-                self.config.install_nodejs = true;
-                self.config.install_claude_code = true;
-                self.config.wordpress = true;
-                self.config.certbot = true;
-                self.config.system_hardening = true;
-                self.config.secure_shm = true;
-                self.config.apparmor = true;
-                self.config.rootkit_detection = true;
-                self.config.file_integrity = true;
-                self.config.audit_logging = true;
-                self.config.log_monitoring = true;
-                self.config.lynis = true;
-                self.config.disable_ipv6 = true;
-                self.config.suricata = true;
-                self.config.advanced_protection = true;
-                self.config.ssh_2fa_totp = true;
-                self.config.ssh_2fa_fido2 = true;
-                self.config.ssh_2fa_duo = true;
-                self.config.backups = true;
-                self.config.usb_restrictions = true;
-                self.config.periodic_reboot = true;
-            }
-            if ui.add(egui::Button::new(
-                egui::RichText::new("Deselect All").size(12.0)
-            ).corner_radius(6.0)).clicked() {
-                self.config.swap = false;
-                self.config.cron_jobs = false;
-                self.config.fail2ban = false;
-                self.config.docker = false;
-                self.config.lemp = false;
-                self.config.devtools = false;
-                self.config.install_neovim = false;
-                self.config.install_nodejs = false;
-                self.config.install_claude_code = false;
-                self.config.wordpress = false;
-                self.config.certbot = false;
-                self.config.system_hardening = false;
-                self.config.secure_shm = false;
-                self.config.apparmor = false;
-                self.config.rootkit_detection = false;
-                self.config.file_integrity = false;
-                self.config.audit_logging = false;
-                self.config.log_monitoring = false;
-                self.config.lynis = false;
-                self.config.disable_ipv6 = false;
-                self.config.suricata = false;
-                self.config.advanced_protection = false;
-                self.config.ssh_2fa_totp = false;
-                self.config.ssh_2fa_fido2 = false;
-                self.config.ssh_2fa_duo = false;
-                self.config.backups = false;
-                self.config.usb_restrictions = false;
-                self.config.periodic_reboot = false;
-            }
-        });
-        ui.add_space(8.0);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            // ── Base Setup ──
-            ui.separator();
-            ui.label(egui::RichText::new("Base Setup")
-                .size(12.0)
-                .strong()
-                .color(macos_colors::LABEL_SECONDARY));
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.config.swap, egui::RichText::new("Swap Memory (auto-sized)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.cron_jobs, egui::RichText::new("Automated Updates & Cron Jobs").size(13.0));
-
-            ui.add_space(12.0);
-
-            // ── Features ──
-            ui.separator();
-            ui.label(egui::RichText::new("Features")
-                .size(12.0)
-                .strong()
-                .color(macos_colors::LABEL_SECONDARY));
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.config.fail2ban, egui::RichText::new("Fail2ban Intrusion Prevention").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.docker, egui::RichText::new("Docker & Docker Compose").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.lemp, egui::RichText::new("LEMP Stack (Nginx, MySQL, PHP)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.devtools, egui::RichText::new("Development Tools").size(13.0));
-            if self.config.devtools {
-                ui.indent("devtools_sub", |ui| {
-                    ui.checkbox(&mut self.config.install_neovim, egui::RichText::new("Neovim editor").size(12.0));
-                    ui.checkbox(&mut self.config.install_nodejs, egui::RichText::new("Node.js runtime").size(12.0));
-                    ui.checkbox(&mut self.config.install_claude_code, egui::RichText::new("Claude Code CLI").size(12.0));
-                });
-            }
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.wordpress, egui::RichText::new("WordPress CMS").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.certbot, egui::RichText::new("Certbot SSL/TLS Certificates").size(13.0));
-
-            ui.add_space(12.0);
-
-            // ── Security ──
-            ui.separator();
-            ui.label(egui::RichText::new("Security")
-                .size(12.0)
-                .strong()
-                .color(macos_colors::LABEL_SECONDARY));
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.config.system_hardening, egui::RichText::new("System Hardening").size(13.0));
-            ui.label(egui::RichText::new("   Kernel hardening, sysctl tuning")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.secure_shm, egui::RichText::new("Secure Shared Memory").size(13.0));
-            ui.label(egui::RichText::new("   Restrict /dev/shm access")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.apparmor, egui::RichText::new("AppArmor Enforcement").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.rootkit_detection, egui::RichText::new("Rootkit Detection (rkhunter)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.file_integrity, egui::RichText::new("File Integrity Monitoring (AIDE)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.audit_logging, egui::RichText::new("Audit Logging (auditd)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.log_monitoring, egui::RichText::new("Log Monitoring (Logwatch)").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.lynis, egui::RichText::new("Lynis Security Audit").size(13.0));
-            ui.label(egui::RichText::new("   Comprehensive security scanner")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.disable_ipv6, egui::RichText::new("Disable IPv6").size(13.0));
-            ui.label(egui::RichText::new("   Reduce attack surface if unused")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.suricata, egui::RichText::new("Suricata IDS").size(13.0));
-            ui.label(egui::RichText::new("   Network intrusion detection")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.ssh_2fa_totp, egui::RichText::new("SSH 2FA: TOTP").size(13.0));
-            ui.label(egui::RichText::new("   Authy, Google Authenticator, 1Password, etc.")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.ssh_2fa_fido2, egui::RichText::new("SSH 2FA: FIDO2 / YubiKey").size(13.0));
-            ui.label(egui::RichText::new("   Hardware security key authentication")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.ssh_2fa_duo, egui::RichText::new("SSH 2FA: Duo Security").size(13.0));
-            ui.label(egui::RichText::new("   Duo push notifications for SSH")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.backups, egui::RichText::new("Automated Backups").size(13.0));
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.config.usb_restrictions, egui::RichText::new("USB Restrictions").size(13.0));
-            ui.label(egui::RichText::new("   Block unauthorized USB devices")
-                .size(11.0)
-                .color(macos_colors::LABEL_TERTIARY));
-
-            ui.add_space(12.0);
-
-            // ── Maintenance ──
-            ui.separator();
-            ui.label(egui::RichText::new("Maintenance")
-                .size(12.0)
-                .strong()
-                .color(macos_colors::LABEL_SECONDARY));
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.config.periodic_reboot, egui::RichText::new("Periodic System Reboot").size(13.0));
-        });
-    }
-
-    fn render_output(&mut self, ui: &mut egui::Ui) {
-        // Success banner
-        if let Some(msg) = self.result_message.clone() {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_premultiplied(48, 209, 88, 25))
-                .stroke(egui::Stroke::new(0.5, macos_colors::SYSTEM_GREEN))
-                .corner_radius(6.0)
-                .inner_margin(10.0)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Success")
-                        .size(13.0)
-                        .strong()
-                        .color(macos_colors::SYSTEM_GREEN));
-                    ui.add_space(2.0);
-                    ui.label(egui::RichText::new(&msg).size(12.0));
-                });
-            ui.add_space(8.0);
-        }
-
-        // Error banner
-        if let Some(msg) = self.error_message.clone() {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_premultiplied(255, 69, 58, 25))
-                .stroke(egui::Stroke::new(0.5, macos_colors::SYSTEM_RED))
-                .corner_radius(6.0)
-                .inner_margin(10.0)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Error")
-                        .size(13.0)
-                        .strong()
-                        .color(macos_colors::SYSTEM_RED));
-                    ui.add_space(4.0);
-                    egui::ScrollArea::vertical()
-                        .max_height(120.0)
-                        .show(ui, |ui| {
-                            for line in msg.lines() {
-                                let color = if line.contains("fatal:") || line.contains("FAILED!") || line.contains("ERROR") {
-                                    macos_colors::SYSTEM_RED
-                                } else {
-                                    egui::Color32::from_rgb(220, 220, 220)
-                                };
-                                ui.label(egui::RichText::new(line)
-                                    .font(egui::FontId::monospace(11.0))
-                                    .color(color));
-                            }
-                        });
-                });
-            ui.add_space(8.0);
-        }
-
-        // Terminal header
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Output")
-                .size(15.0)
-                .strong()
-                .color(macos_colors::LABEL_PRIMARY));
-            if self.provisioning {
-                ui.spinner();
-            }
-        });
-        ui.add_space(4.0);
-
-        // Terminal output area
-        if self.provisioning || !self.output_lines.is_empty() {
-            egui::Frame::new()
-                .fill(macos_colors::TERMINAL_BG)
-                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
-                .corner_radius(6.0)
-                .inner_margin(10.0)
-                .show(ui, |ui| {
+                    ui.label(RichText::new("RSA ARCHIVE").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Provisioning Output")
-                            .size(12.0)
-                            .color(macos_colors::LABEL_SECONDARY));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let open_btn = ui.add(egui::Button::new(
-                                egui::RichText::new("Open Log").size(11.0)
-                            ).corner_radius(6.0));
-                            if open_btn.clicked() {
-                                if let Ok(repo_root) = get_repo_root() {
-                                    let log_path = repo_root.join("provisioning.log");
-                                    let _ = std::process::Command::new("open")
-                                        .arg(&log_path)
-                                        .spawn();
-                                }
+                        if ui.add(egui::TextEdit::singleline(&mut self.config.ssh_key_path).desired_width(340.0)).changed() {
+                            config_changed = true;
+                        }
+                        if ui.button("BROWSE").clicked() {
+                            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                self.config.ssh_key_path = path.to_string_lossy().to_string();
+                                config_changed = true;
                             }
-                            let copy_btn = ui.add(egui::Button::new(
-                                egui::RichText::new("Copy Logs").size(11.0)
-                            ).corner_radius(6.0));
-                            if copy_btn.clicked() {
-                                let all_output = self.output_lines.join("\n");
-                                ui.ctx().copy_text(all_output);
+                        }
+                    });
+                    ui.end_row();
+
+                    ui.label(RichText::new("KEY PASSPHRASE").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
+                    if ui.add(egui::TextEdit::singleline(&mut self.config.ssh_key_passphrase).desired_width(450.0).password(true)).changed() {
+                        config_changed = true;
+                    }
+                    ui.end_row();
+
+                    ui.label(RichText::new("ALIAS").strong().color(macos_v26_colors::TEXT_LOW).size(12.0).extra_letter_spacing(1.0));
+                    if ui.add(egui::TextEdit::singleline(&mut self.config.hostname).desired_width(450.0)).changed() {
+                        config_changed = true;
+                    }
+                    ui.end_row();
+                });
+
+
+                ui.add_space(32.0);
+                ui.horizontal(|ui| {
+                    let btn_text = if self.testing_connection { "PROBING..." } else { "VALIDATE GATEWAY" };
+                    let btn = egui::Button::new(RichText::new(btn_text).strong().color(macos_v26_colors::ACCENT_LIGHT))
+                        .min_size(egui::vec2(220.0, 44.0));
+
+                    if ui.add_enabled(!self.testing_connection && !self.provisioning, btn).clicked() {
+                        self.test_connection();
+                    }
+
+                    if let Some(result) = &self.connection_test_result {
+                        let color = if result == "Verified" { macos_v26_colors::SUCCESS } else { macos_v26_colors::ERROR };
+                        ui.label(RichText::new(format!("❯ {}", result)).color(color).strong().size(16.0));
+                    }
+                });
+            });
+
+            ui.add_space(40.0);
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                ui.horizontal(|ui| {
+                    if ui.checkbox(&mut self.config.create_user, "").changed() {
+                        config_changed = true;
+                    }
+                    ui.label(RichText::new("DEPLOY SYSTEM IDENTITY").size(18.0).strong().color(macos_v26_colors::TEXT_BRIGHT));
+                });
+
+                if self.config.create_user {
+                    ui.add_space(24.0);
+                    ui.indent("user_indent", |ui| {
+                        egui::Grid::new("user_grid").spacing([32.0, 20.0]).show(ui, |ui| {
+                            ui.label(RichText::new("UID").strong().color(macos_v26_colors::TEXT_LOW).size(12.0));
+                            if ui.add(egui::TextEdit::singleline(&mut self.config.added_user).desired_width(450.0)).changed() {
+                                config_changed = true;
                             }
+                            ui.end_row();
+
+                            ui.label(RichText::new("PASSCODE").strong().color(macos_v26_colors::TEXT_LOW).size(12.0));
+                            if ui.add(egui::TextEdit::singleline(&mut self.config.user_password).desired_width(450.0).password(true)).changed() {
+                                config_changed = true;
+                            }
+                            ui.end_row();
                         });
                     });
-                    ui.add_space(4.0);
+                }
+            });
 
-                    egui::ScrollArea::vertical()
-                        .max_height(ui.available_height() - 8.0)
-                        .stick_to_bottom(true)
-                        .show(ui, |ui| {
+            // Auto-save when any field changes
+            if config_changed {
+                let _ = save_cache(&self.config);
+            }
+        }
+
+    fn render_features(&mut self, ui: &mut egui::Ui) {
+            self.render_v26_header(ui, "Resource Assets", "Deploy high-performance environment clusters.");
+
+            let mut config_changed = false;
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                ui.label(RichText::new("CLUSTER CORE").small().strong().color(macos_v26_colors::TEXT_LOW).extra_letter_spacing(1.5));
+                ui.add_space(16.0);
+                if ui.checkbox(&mut self.config.docker, RichText::new("Docker Orchestration Matrix").size(17.0)).changed() {
+                    config_changed = true;
+                }
+                ui.add_space(20.0);
+
+                if ui.checkbox(&mut self.config.lemp, RichText::new("LEMP High-Performance Stack").size(17.0)).changed() {
+                    config_changed = true;
+                }
+                if self.config.lemp {
+                    ui.add_space(12.0);
+                    ui.indent("lemp_indent", |ui: &mut egui::Ui| {
+                        if ui.checkbox(&mut self.config.wordpress, "WordPress Platinum Engine").changed() {
+                            config_changed = true;
+                        }
+                        if ui.checkbox(&mut self.config.certbot, "Quantum SSL Hardening").changed() {
+                            config_changed = true;
+                        }
+                    });
+                }
+            });
+
+            ui.add_space(40.0);
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                ui.label(RichText::new("DEVELOPER ENVIRONMENT").small().strong().color(macos_v26_colors::TEXT_LOW).extra_letter_spacing(1.5));
+                ui.add_space(16.0);
+                if ui.checkbox(&mut self.config.devtools, RichText::new("Integrated IDE Subsystem").size(17.0).strong()).changed() {
+                    config_changed = true;
+                }
+
+                if self.config.devtools {
+                    ui.add_space(20.0);
+                    ui.indent("dev_indent", |ui: &mut egui::Ui| {
+                        config_changed |= ui.checkbox(&mut self.config.install_neovim, "Neovim Terminal IDE").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_micro, "Micro Text Editor").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_zsh, "Zsh Shell").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_fish, "Fish Shell").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_starship, "Starship Prompt").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_tmux, "tmux Multiplexer").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_nodejs, "Node.js 24 LTS").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_claude_code, "Claude Code").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_gemini, "Gemini AI CLI").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_kiro, "Kiro Tool").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_github_cli, "GitHub CLI (gh)").changed();
+
+                        ui.add_space(8.0);
+                        ui.label(RichText::new("Utilities").strong().color(macos_v26_colors::TEXT_MED));
+                        config_changed |= ui.checkbox(&mut self.config.install_btop, "btop (System Monitor)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_htop, "htop (Process Viewer)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_ripgrep, "ripgrep (rg)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_fd, "fd-find (fd)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_fzf, "fzf (Fuzzy Finder)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_zoxide, "zoxide (Smarter cd)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_direnv, "direnv (Env Switcher)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_ranger, "ranger (File Manager)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_duf, "duf (Disk Usage)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_ncdu, "ncdu (Disk Analyzer)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_lnav, "lnav (Log Navigator)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_tldr, "tldr (Simplified Man)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_lazygit, "lazygit (Git TUI)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_uv, "uv (Fast Python PM)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_jq, "jq (JSON Processor)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_gping, "gping (Visual Ping)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_nmap, "nmap (Network Audit)").changed();
+                        config_changed |= ui.checkbox(&mut self.config.install_autossh, "autossh (SSH Persistence)").changed();
+                    });
+                }
+            });
+
+            if config_changed {
+                let _ = save_cache(&self.config);
+            }
+        }
+
+    fn render_security(&mut self, ui: &mut egui::Ui) {
+            self.render_v26_header(ui, "Shield Perimeter", "Activate multi-layered system hardening protocols.");
+
+            let mut config_changed = false;
+
+            ui.columns(2, |cols| {
+                crystal_card(&mut cols[0], |ui: &mut egui::Ui| {
+                    ui.label(RichText::new("THREAT MITIGATION").small().strong().color(macos_v26_colors::TEXT_LOW).extra_letter_spacing(1.0));
+                    ui.add_space(16.0);
+                    config_changed |= ui.checkbox(&mut self.config.fail2ban, "Fail2ban Shield").changed();
+                    config_changed |= ui.checkbox(&mut self.config.apparmor, "AppArmor MAC").changed();
+                    config_changed |= ui.checkbox(&mut self.config.rootkit_detection, "Malware Scan").changed();
+                    config_changed |= ui.checkbox(&mut self.config.suricata, "Network IDS").changed();
+                    config_changed |= ui.checkbox(&mut self.config.disable_ipv6, "Disable IPv6 Protocol").changed();
+                });
+
+                crystal_card(&mut cols[1], |ui: &mut egui::Ui| {
+                    ui.label(RichText::new("ACCESS CONTROL").small().strong().color(macos_v26_colors::TEXT_LOW).extra_letter_spacing(1.0));
+                    ui.add_space(16.0);
+                    config_changed |= ui.checkbox(&mut self.config.ssh_2fa_totp, "2FA: Authenticator").changed();
+                    config_changed |= ui.checkbox(&mut self.config.ssh_2fa_fido2, "2FA: FIDO2 Keys").changed();
+                    config_changed |= ui.checkbox(&mut self.config.ssh_2fa_duo, "2FA: Duo Push").changed();
+                    config_changed |= ui.checkbox(&mut self.config.usb_restrictions, "USB Hardware Lock").changed();
+                    config_changed |= ui.checkbox(&mut self.config.backups, "Automated System Backups").changed();
+                });
+            });
+
+            ui.add_space(40.0);
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                ui.label(RichText::new("NUCLEUS HARDENING").small().strong().color(macos_v26_colors::TEXT_LOW).extra_letter_spacing(1.5));
+                ui.add_space(20.0);
+                ui.horizontal(|ui: &mut egui::Ui| {
+                    config_changed |= ui.checkbox(&mut self.config.system_hardening, "Kernel Tuning").changed();
+                    ui.add_space(32.0);
+                    config_changed |= ui.checkbox(&mut self.config.file_integrity, "AIDE Sync").changed();
+                    ui.add_space(32.0);
+                    config_changed |= ui.checkbox(&mut self.config.audit_logging, "Auditd Stream").changed();
+                });
+            });
+
+            if config_changed {
+                let _ = save_cache(&self.config);
+            }
+        }
+
+    fn render_maintenance(&mut self, ui: &mut egui::Ui) {
+            self.render_v26_header(ui, "System Nucleus", "Optimize resource allocation and cycle management.");
+
+            let mut config_changed = false;
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                ui.horizontal(|ui: &mut egui::Ui| {
+                    ui.vertical(|ui: &mut egui::Ui| {
+                        if ui.checkbox(&mut self.config.swap, RichText::new("Intelligent Swap").size(17.0)).changed() {
+                            config_changed = true;
+                        }
+                        ui.label(RichText::new("Automated RAM paging").small().color(macos_v26_colors::TEXT_LOW));
+                    });
+                    ui.add_space(80.0);
+                    ui.vertical(|ui: &mut egui::Ui| {
+                        if ui.checkbox(&mut self.config.cron_jobs, RichText::new("Automated Ops").size(17.0)).changed() {
+                            config_changed = true;
+                        }
+                        ui.label(RichText::new("Security patch cycles").small().color(macos_v26_colors::TEXT_LOW));
+                    });
+                });
+            });
+
+            ui.add_space(40.0);
+
+            crystal_card(ui, |ui: &mut egui::Ui| {
+                if ui.checkbox(&mut self.config.periodic_reboot, RichText::new("Scheduled Refresh Cycles").size(17.0).strong()).changed() {
+                    config_changed = true;
+                }
+
+                if self.config.periodic_reboot {
+                    ui.add_space(24.0);
+                    ui.horizontal(|ui: &mut egui::Ui| {
+                        ui.label(RichText::new("PROTOCOL FREQUENCY").color(macos_v26_colors::TEXT_LOW).strong().size(12.0).extra_letter_spacing(1.0));
+                        let combo_response = egui::ComboBox::from_id_salt("reboot_hour")
+                            .selected_text(format_reboot_schedule(&self.config.reboot_hour))
+                            .width(280.0)
+                            .show_ui(ui, |ui| {
+                                let mut changed = false;
+                                changed |= ui.selectable_value(&mut self.config.reboot_hour, "1".into(), "01:00 Standard").changed();
+                                changed |= ui.selectable_value(&mut self.config.reboot_hour, "3".into(), "03:00 Standard").changed();
+                                changed |= ui.selectable_value(&mut self.config.reboot_hour, "5".into(), "05:00 Standard").changed();
+                                changed |= ui.selectable_value(&mut self.config.reboot_hour, "*/6".into(), "Interval: 6 Hours").changed();
+                                changed |= ui.selectable_value(&mut self.config.reboot_hour, "*/12".into(), "Interval: 12 Hours").changed();
+                                changed
+                            });
+                        if combo_response.inner.unwrap_or(false) {
+                            config_changed = true;
+                        }
+                    });
+                }
+            });
+
+            if config_changed {
+                let _ = save_cache(&self.config);
+            }
+        }
+
+    fn render_output(&mut self, ui: &mut egui::Ui) {
+        if let Some(msg) = self.result_message.clone() {
+            ui.label(RichText::new(format!("❯ SUCCESS: {}", msg)).color(macos_v26_colors::SUCCESS).strong().size(22.0));
+            ui.add_space(24.0);
+        }
+        if let Some(msg) = self.error_message.clone() {
+            ui.label(RichText::new(format!("❯ INTERRUPT: {}", msg)).color(macos_v26_colors::ERROR).strong().size(22.0));
+            ui.add_space(24.0);
+        }
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("System Stream").size(26.0).strong().color(macos_v26_colors::TEXT_BRIGHT));
+            if self.provisioning { ui.spinner(); }
+            
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("PURGE LOG").clicked() {
+                    self.output_lines.clear();
+                    self.result_message = None;
+                    self.error_message = None;
+                }
+            });
+        });
+
+        ui.add_space(24.0);
+        egui::Frame::NONE
+            .fill(macos_v26_colors::TERMINAL_BG)
+            .corner_radius(CornerRadius::same(20))
+            .inner_margin(28.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(ui.available_height() - 20.0)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        if self.output_lines.is_empty() {
+                            ui.centered_and_justified(|ui| {
+                                ui.label(RichText::new("SYSTEM READY FOR INITIALIZATION").color(macos_v26_colors::TEXT_LOW).strong().extra_letter_spacing(2.0));
+                            });
+                        } else {
                             for line in &self.output_lines {
                                 let (color, bold) = ansible_line_style(line);
-                                let mut text = egui::RichText::new(line)
-                                    .font(egui::FontId::monospace(11.0))
-                                    .color(color);
-                                if bold {
-                                    text = text.strong();
-                                }
+                                let mut text = RichText::new(line).font(egui::FontId::monospace(14.0)).color(color);
+                                if bold { text = text.strong(); }
                                 ui.label(text);
                             }
-                        });
-                });
-        } else {
-            ui.label(egui::RichText::new("No output yet. Start provisioning to see results.")
-                .size(12.0)
-                .color(macos_colors::LABEL_TERTIARY));
-        }
+                        }
+                    });
+            });
     }
 }
 
 impl Drop for AnsibleProvisioningApp {
-    fn drop(&mut self) {
-        println!("Drop trait triggered - ensuring cleanup...");
-        self.cleanup();
-    }
+    fn drop(&mut self) { self.cleanup(); }
 }
 
 impl eframe::App for AnsibleProvisioningApp {
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        println!("Application exiting - triggering cleanup...");
-        self.cleanup();
-    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) { self.cleanup(); }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Check for signal-based shutdown request
         if self.term_signal.load(Ordering::Relaxed) {
-            println!("Signal received - initiating graceful shutdown...");
             self.cleanup();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
 
-        // Poll for messages
         if let Some(rx) = &self.rx {
             while let Ok(msg) = rx.try_recv() {
-                match msg {
-                    ProvisioningMessage::Output(line) => {
-                        self.output_lines.push(line);
+                if self.testing_connection {
+                    match msg {
+                        ProvisioningMessage::Error(e) => { self.connection_test_result = Some(e); self.testing_connection = false; }
+                        ProvisioningMessage::Complete(s) => { self.connection_test_result = Some(if s { "Verified".into() } else { "Failed".into() }); self.testing_connection = false; }
+                        _ => {}
                     }
-                    ProvisioningMessage::Error(line) => {
-                        self.output_lines.push(format!("ERROR: {}", line));
-                    }
-                    ProvisioningMessage::Complete(success) => {
-                        self.provisioning = false;
-                        if success {
-                            self.result_message = Some("Provisioning completed successfully!".to_string());
-                        } else {
-                            // Collect recent error/fatal lines for context
-                            let error_lines: Vec<&str> = self.output_lines.iter()
-                                .filter(|l| l.contains("ERROR") || l.contains("fatal:") || l.contains("FAILED!") || l.contains("UNREACHABLE!"))
-                                .map(|l| l.as_str())
-                                .collect();
-                            let detail = if error_lines.is_empty() {
-                                // Show last 5 lines as context
-                                let tail: Vec<&str> = self.output_lines.iter()
-                                    .rev().take(5).collect::<Vec<_>>().into_iter().rev()
-                                    .map(|l| l.as_str()).collect();
-                                format!("Provisioning failed.\n\nLast output:\n{}", tail.join("\n"))
-                            } else {
-                                format!("Provisioning failed.\n\nErrors:\n{}", error_lines.join("\n"))
-                            };
-                            self.error_message = Some(detail);
+                } else {
+                    match msg {
+                        ProvisioningMessage::Output(line) => self.output_lines.push(line),
+                        ProvisioningMessage::Error(line) => self.output_lines.push(format!("❯ ERR: {}", line)),
+                        ProvisioningMessage::Complete(success) => {
+                            self.provisioning = false;
+                            if success { self.result_message = Some("INITIALIZATION COMPLETE".into()); }
+                            else { self.error_message = Some("SYNC INTERRUPTED".into()); }
                         }
                     }
                 }
             }
         }
 
-        // Auto-save config on changes
-        let _ = save_cache(&self.config);
-
-        // Toolbar
-        egui::TopBottomPanel::top("toolbar")
-            .frame(egui::Frame::new()
-                .fill(macos_colors::TOOLBAR_BG)
-                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
-                .inner_margin(egui::vec2(12.0, 6.0)))
+        egui::SidePanel::left("v26_sidebar")
+            .frame(egui::Frame::new().fill(macos_v26_colors::SIDEBAR_BG).inner_margin(Margin::same(32)))
+            .exact_width(280.0)
             .show(ctx, |ui| {
-                ui.add_space(2.0);
-                ui.horizontal(|ui| {
-                    let button_text = if self.provisioning {
-                        "Provisioning..."
-                    } else {
-                        "Start Provisioning"
-                    };
-
-                    let button = egui::Button::new(
-                        egui::RichText::new(button_text).size(13.0).strong()
-                    )
-                    .fill(if self.provisioning {
-                        macos_colors::GROUPED_BG
-                    } else {
-                        macos_colors::ACCENT_BLUE
-                    })
-                    .corner_radius(6.0)
-                    .min_size(egui::vec2(140.0, 28.0));
-
-                    let response = ui.add_enabled(!self.provisioning, button);
-
-                    if response.clicked() {
-                        self.launch_provisioning();
-                    }
-
-                    if self.provisioning {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Running...")
-                            .size(12.0)
-                            .color(macos_colors::LABEL_SECONDARY));
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("Settings auto-saved")
-                            .size(11.0)
-                            .color(macos_colors::LABEL_TERTIARY));
-                    });
-                });
-                ui.add_space(2.0);
-            });
-
-        // Sidebar
-        egui::SidePanel::left("nav_sidebar")
-            .resizable(false)
-            .exact_width(180.0)
-            .frame(egui::Frame::new()
-                .fill(macos_colors::SIDEBAR_BG)
-                .stroke(egui::Stroke::new(0.5, macos_colors::SEPARATOR))
-                .inner_margin(egui::vec2(8.0, 12.0)))
-            .show(ctx, |ui| {
+                ui.add_space(20.0);
+                ui.label(RichText::new("RUSTSIBLE").size(28.0).strong().color(macos_v26_colors::TEXT_BRIGHT).extra_letter_spacing(3.0));
+                ui.label(RichText::new("PLATINUM v26").size(12.0).strong().color(macos_v26_colors::ACCENT).extra_letter_spacing(1.5));
+                ui.add_space(56.0);
+                
                 let sections = [
-                    NavSection::Connection,
-                    NavSection::Features,
-                    NavSection::Security,
-                    NavSection::Maintenance,
-                    NavSection::Tasks,
-                    NavSection::Output,
+                    NavSection::Connection, 
+                    NavSection::Features, 
+                    NavSection::Security, 
+                    NavSection::Maintenance, 
+                    NavSection::Output
                 ];
-
+                
                 for section in sections {
                     let selected = self.selected_section == section;
-
-                    // macOS sidebar row
-                    let desired_size = egui::vec2(ui.available_width(), 26.0);
-                    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
-
-                    if selected {
-                        // macOS accent selection highlight
-                        ui.painter().rect_filled(
-                            rect,
-                            egui::CornerRadius::same(5),
-                            macos_colors::SELECTED_CONTENT_BG,
-                        );
-                    } else if response.hovered() {
-                        ui.painter().rect_filled(
-                            rect,
-                            egui::CornerRadius::same(5),
-                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 10),
-                        );
+                    
+                    let bg = if selected { macos_v26_colors::GLASS_SURFACE } else { Color32::TRANSPARENT };
+                    let stroke = if selected { Stroke::new(1.0, macos_v26_colors::ACCENT) } else { Stroke::NONE };
+                    
+                    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 52.0), egui::Sense::click());
+                    
+                    if response.hovered() {
+                         ui.painter().rect_filled(rect, CornerRadius::same(16), Color32::from_rgba_premultiplied(255, 255, 255, 10));
                     }
-
+                    
+                    ui.painter().rect(rect, CornerRadius::same(16), bg, stroke, StrokeKind::Inside);
+                    
                     ui.painter().text(
-                        egui::pos2(rect.left() + 10.0, rect.center().y),
+                        egui::pos2(rect.left() + 24.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
-                        section.label(),
-                        egui::FontId::proportional(13.0),
-                        if selected {
-                            macos_colors::LABEL_PRIMARY
-                        } else {
-                            macos_colors::LABEL_SECONDARY
-                        },
+                        format!("{}  {}", section.icon(), section.label()),
+                        egui::FontId::proportional(15.0),
+                        if selected { macos_v26_colors::TEXT_BRIGHT } else { macos_v26_colors::TEXT_MED }
                     );
 
                     if response.clicked() {
                         self.selected_section = section;
+                        // Save cache when switching sections
+                        let _ = save_cache(&self.config);
                     }
+                    ui.add_space(14.0);
                 }
+
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                    ui.add_space(32.0);
+                    let deploy_text = if self.provisioning { "SYNCING..." } else { "INITIATE DEPLOY" };
+                    let deploy_btn = egui::Button::new(RichText::new(deploy_text).size(17.0).strong().color(Color32::BLACK))
+                        .fill(if self.provisioning { Color32::from_rgb(255, 100, 50) } else { macos_v26_colors::ACCENT })
+                        .min_size(egui::vec2(ui.available_width(), 60.0));
+                    
+                    if ui.add_enabled(!self.provisioning, deploy_btn).clicked() { self.launch_provisioning(); }
+                    
+                    if self.provisioning { 
+                         if ui.button("TERMINATE").clicked() { self.cleanup(); self.provisioning = false; }
+                    }
+                });
             });
 
-        // Detail pane
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new()
-                .fill(macos_colors::WINDOW_BG)
-                .inner_margin(egui::vec2(20.0, 16.0)))
-            .show(ctx, |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(40.0);
                 match self.selected_section {
                     NavSection::Connection => self.render_connection(ui),
                     NavSection::Features => self.render_features(ui),
                     NavSection::Security => self.render_security(ui),
                     NavSection::Maintenance => self.render_maintenance(ui),
-                    NavSection::Tasks => self.render_tasks(ui),
                     NavSection::Output => self.render_output(ui),
                 }
+                ui.add_space(100.0);
             });
+        });
 
-        // Request repaint for smooth updates
-        if self.provisioning {
-            ctx.request_repaint();
-        }
+        if self.provisioning || self.testing_connection { ctx.request_repaint(); }
     }
-}
-
-fn setup_custom_style(ctx: &egui::Context) {
-    // Start from egui's built-in dark theme
-    let mut style = (*ctx.style()).clone();
-    style.visuals = egui::Visuals::dark();
-
-    // macOS dark mode panel colors
-    style.visuals.panel_fill = macos_colors::WINDOW_BG;
-    style.visuals.window_fill = macos_colors::WINDOW_BG;
-    style.visuals.extreme_bg_color = macos_colors::TERMINAL_BG;
-
-    // Widget fills — standard macOS grouped background tones
-    style.visuals.widgets.noninteractive.bg_fill = macos_colors::GROUPED_BG;
-    style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(38, 38, 40);
-    style.visuals.widgets.inactive.bg_fill = macos_colors::GROUPED_BG;
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(38, 38, 40);
-    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(58, 58, 60);
-    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(50, 50, 52);
-    style.visuals.widgets.active.bg_fill = macos_colors::ACCENT_BLUE;
-    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(0, 112, 235);
-
-    // macOS-standard rounding (6px — Settings/Finder style)
-    let macos_rounding = egui::CornerRadius::same(6);
-    style.visuals.widgets.noninteractive.corner_radius = macos_rounding;
-    style.visuals.widgets.inactive.corner_radius = macos_rounding;
-    style.visuals.widgets.hovered.corner_radius = macos_rounding;
-    style.visuals.widgets.active.corner_radius = macos_rounding;
-
-    // Compact macOS density
-    style.spacing.item_spacing = egui::vec2(8.0, 4.0);
-    style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    style.spacing.indent = 16.0;
-    style.spacing.interact_size = egui::vec2(40.0, 20.0);
-
-    // Standard dark mode shadows
-    style.visuals.popup_shadow = egui::Shadow {
-        offset: [0, 2],
-        blur: 8,
-        spread: 0,
-        color: egui::Color32::from_rgba_premultiplied(0, 0, 0, 60),
-    };
-    style.visuals.window_shadow = egui::Shadow::NONE;
-
-    style.animation_time = 0.15;
-
-    ctx.set_style(style);
 }
 
 fn format_reboot_schedule(hour: &str) -> String {
-    match hour {
-        "1" => "Daily at 1:00 AM",
-        "2" => "Daily at 2:00 AM",
-        "3" => "Daily at 3:00 AM",
-        "4" => "Daily at 4:00 AM",
-        "5" => "Daily at 5:00 AM",
-        "*/6" => "Every 6 hours",
-        "*/12" => "Every 12 hours",
-        "*/24" => "Every 24 hours",
-        _ => "Daily at 3:00 AM",
-    }.to_string()
-}
-
-fn get_cache_path() -> PathBuf {
-    let mut path = dirs::home_dir().expect("Could not find home directory");
-    path.push(".ansible_provisioning_cache.json");
-    path
-}
-
-fn load_cache() -> Result<ProvisioningConfig, String> {
-    let cache_path = get_cache_path();
-    if cache_path.exists() {
-        let contents = fs::read_to_string(&cache_path)
-            .map_err(|e| format!("Failed to read cache: {}", e))?;
-        serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse cache: {}", e))
-    } else {
-        Ok(ProvisioningConfig::default())
-    }
-}
-
-fn save_cache(config: &ProvisioningConfig) -> Result<(), String> {
-    let cache_path = get_cache_path();
-    let json = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&cache_path, json)
-        .map_err(|e| format!("Failed to write cache: {}", e))
+    match hour { "1" => "01:00 Standard", "3" => "03:00 Standard", "5" => "05:00 Standard", "*/6" => "Interval: 6 Hours", "*/12" => "Interval: 12 Hours", _ => "03:00 Standard" }.into()
 }
 
 fn get_repo_root() -> Result<PathBuf, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-
-    let mut current = exe_path.parent().ok_or("No parent directory")?;
-
-    loop {
-        let playbook_path = current.join("playbook.yml");
-        if playbook_path.exists() {
-            return Ok(current.to_path_buf());
-        }
-
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => break,
-        }
+    let mut current = std::env::current_exe().map_err(|e| e.to_string())?;
+    while let Some(parent) = current.parent() {
+        if parent.join("playbook.yml").exists() { return Ok(parent.to_path_buf()); }
+        current = parent.to_path_buf();
     }
-
-    std::env::current_dir()
-        .map_err(|e| format!("Could not find repository root: {}", e))
+    std::env::current_dir().map_err(|e| e.to_string())
 }
 
-/// Check if a line is just a timing line from profile_tasks callback
-/// e.g. "Friday 20 February 2026  19:15:30 -0800 (0:00:00.008)       0:00:00.008 *******"
 fn is_timing_only_line(s: &str) -> bool {
-    // Lines that are ONLY timing info (no task name)
-    // They match: "<weekday> <date> <time> <tz> (<delta>) <total> *****"
-    (s.contains("*******") && !s.contains("TASK") && !s.contains("PLAY") && !s.contains("HANDLER"))
-        || (s.starts_with("Friday ") || s.starts_with("Saturday ") || s.starts_with("Sunday ")
-            || s.starts_with("Monday ") || s.starts_with("Tuesday ")
-            || s.starts_with("Wednesday ") || s.starts_with("Thursday "))
-            && s.contains("(0:") && s.ends_with("*******")
+    s.contains("*******") && !s.contains("TASK") && !s.contains("PLAY")
 }
 
-/// Returns (color, bold) matching macOS system colors for ansible output
-fn ansible_line_style(line: &str) -> (egui::Color32, bool) {
-    let trimmed = line.trim();
-
-    // --- Red / errors ---
-    if trimmed.starts_with("fatal:") || trimmed.contains("FAILED!") {
-        return (macos_colors::SYSTEM_RED, true);
-    }
-    if trimmed.contains("ERROR") || trimmed.starts_with("ERROR:") {
-        return (macos_colors::SYSTEM_RED, true);
-    }
-    if trimmed.contains("UNREACHABLE!") || trimmed.contains("unreachable=") {
-        return (macos_colors::SYSTEM_RED, true);
-    }
-
-    // --- Yellow / changed ---
-    if trimmed.starts_with("changed:") || trimmed.contains("changed:") {
-        return (macos_colors::SYSTEM_YELLOW, false);
-    }
-    if trimmed.contains("[WARNING]") || trimmed.starts_with("WARNING") || trimmed.starts_with("[DEPRECATION") {
-        return (macos_colors::SYSTEM_ORANGE, false);
-    }
-
-    // --- Green / ok ---
-    if trimmed.starts_with("ok:") || trimmed.contains("ok:") {
-        return (macos_colors::SYSTEM_GREEN, false);
-    }
-    if trimmed.contains("SUCCESS") || trimmed.contains("PROVISIONING COMPLETED") {
-        return (macos_colors::SYSTEM_GREEN, true);
-    }
-
-    // --- Cyan / skipped ---
-    if trimmed.starts_with("skipping:") || trimmed.contains("skipping:") {
-        return (macos_colors::SYSTEM_CYAN, false);
-    }
-    if trimmed.starts_with("included:") {
-        return (macos_colors::SYSTEM_CYAN, false);
-    }
-
-    // --- Bold white / structural ---
-    if trimmed.starts_with("PLAY [") || trimmed.starts_with("PLAY RECAP") {
-        return (macos_colors::LABEL_PRIMARY, true);
-    }
-    if trimmed.starts_with("TASK [") {
-        return (macos_colors::ACCENT_BLUE, true);
-    }
-    if trimmed.starts_with("RUNNING HANDLER") {
-        return (macos_colors::ACCENT_BLUE, true);
-    }
-
-    // --- Purple / recap stats ---
-    if trimmed.contains("ok=") && trimmed.contains("changed=") {
-        return (macos_colors::SYSTEM_PURPLE, false);
-    }
-
-    // --- Dim gray / timing & separators ---
-    if trimmed.contains("0:00:") || trimmed.starts_with("====") || trimmed.starts_with("----") {
-        return (macos_colors::LABEL_TERTIARY, false);
-    }
-    if trimmed.starts_with("Playbook run took") || trimmed.starts_with("TASKS RECAP") || trimmed.starts_with("PLAYBOOK RECAP") {
-        return (macos_colors::LABEL_SECONDARY, true);
-    }
-
-    // --- Log file line ---
-    if trimmed.starts_with("Log file:") {
-        return (macos_colors::LABEL_TERTIARY, false);
-    }
-
-    // --- Default ---
-    (egui::Color32::from_rgb(200, 200, 200), false)
-}
-
-/// Strip ANSI escape codes from a string.
-/// Handles real ESC (\x1b), and literal representations (\033, \u000033, \u001b)
-/// that appear in ansible's YAML-formatted output.
 fn strip_ansi(s: &str) -> String {
-    // First strip real ESC char sequences
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            result.push(c);
+    let re = regex::Regex::new(r"[\x1b\x00]\[[\d;]*m|\\u001b\[[\d;]*m|\\033\[[\d;]*m").unwrap();
+    re.replace_all(s, "").to_string()
+}
+
+fn bool_to_yes_no(v: bool) -> &'static str { if v { "yes" } else { "no" } }
+
+async fn setup_ssh_agent(key_path: &std::path::Path, passphrase: &str) -> Result<(String, String), String> {
+    let output = Command::new("ssh-agent").arg("-s").output().await.map_err(|e| e.to_string())?;
+    let out_str = String::from_utf8_lossy(&output.stdout);
+    let mut socket = String::new();
+    let mut pid = String::new();
+    for line in out_str.lines() {
+        if line.contains("SSH_AUTH_SOCK=") { 
+            socket = line.split(';').next().unwrap().replace("SSH_AUTH_SOCK=", ""); 
+        }
+        if line.contains("SSH_AGENT_PID=") { 
+            pid = line.split(';').next().unwrap().replace("SSH_AGENT_PID=", ""); 
         }
     }
-    // Then strip literal escape representations from YAML output:
-    //   \u000033[1;36m  \u001b[0m  \033[1;36m
-    // Catch-all: strip any remaining escape-like patterns from YAML output
-    // Matches: \u000033[...m  \u001b[...m  \033[...m  and NUL-padded variants
-    if let Ok(re) = regex::Regex::new(r"(?:\\u[0]*(?:1[bB]|33)|\\033|\x00+33)\[[\d;]*m") {
-        result = re.replace_all(&result, "").to_string();
-    }
-    result
-}
-
-fn bool_to_yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
-}
-
-async fn run_provisioning(
-    config: ProvisioningConfig,
-    tx: Sender<ProvisioningMessage>,
-    shutdown_signal: Arc<AtomicBool>,
-    child_pid: Arc<AtomicU32>,
-) -> Result<(), String> {
-    let repo_root = get_repo_root()?;
-    let playbook_path = repo_root.join("playbook.yml");
-
-    if !playbook_path.exists() {
-        return Err(format!("Playbook not found at: {}", playbook_path.display()));
+    
+    if socket.is_empty() || pid.is_empty() { 
+        return Err("Failed to initialize SSH agent".into()); 
     }
 
+    let status = if !passphrase.is_empty() {
+        let askpass = std::env::temp_dir().join(format!("askpass_{}.sh", pid));
+        let script = format!("#!/bin/sh\ncat << 'EOF'\n{}\nEOF\n", passphrase);
+        tokio::fs::write(&askpass, script).await.map_err(|e| e.to_string())?;
+        tokio::fs::set_permissions(&askpass, PermissionsExt::from_mode(0o700)).await.map_err(|e| e.to_string())?;
+        
+        let s = Command::new("ssh-add")
+            .arg(key_path)
+            .env("SSH_AUTH_SOCK", &socket)
+            .env("SSH_ASKPASS", &askpass)
+            .env("DISPLAY", ":0")
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .status()
+            .await
+            .map_err(|e| e.to_string())?;
+            
+        let _ = tokio::fs::remove_file(askpass).await;
+        s
+    } else {
+        Command::new("ssh-add")
+            .arg(key_path)
+            .env("SSH_AUTH_SOCK", &socket)
+            .status()
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    if !status.success() {
+        let _ = std::process::Command::new("kill").arg(&pid).status();
+        return Err("Decryption Failed".into());
+    }
+
+    Ok((socket, pid))
+}
+
+async fn run_provisioning(config: ProvisioningConfig, tx: Sender<ProvisioningMessage>, shutdown: Arc<AtomicBool>, child_pid: Arc<AtomicU32>) -> Result<(), String> {
+    // Validate configuration first
+    if config.ip_address.trim().is_empty() {
+        return Err("IP address is required".to_string());
+    }
+    if config.ssh_user.trim().is_empty() {
+        return Err("SSH user is required".to_string());
+    }
+    if config.ssh_key_path.trim().is_empty() {
+        return Err("SSH key path is required".to_string());
+    }
+    
+    let root = get_repo_root()?;
+    
     let ssh_key_path = if config.ssh_key_path.starts_with("~/") {
         dirs::home_dir()
-            .ok_or("Could not determine home directory")?
+            .ok_or("Failed to get home directory")?
             .join(&config.ssh_key_path[2..])
     } else {
         PathBuf::from(&config.ssh_key_path)
     };
 
+    // Verify SSH key exists
     if !ssh_key_path.exists() {
-        return Err(format!("SSH key not found at: {}", ssh_key_path.display()));
+        return Err(format!("SSH key not found: {}", ssh_key_path.display()));
     }
 
+    let mut auth_sock: Option<String> = None;
+    let mut agent_pid: Option<String> = None;
+
+    if !config.ssh_key_passphrase.is_empty() {
+        let _ = tx.send(ProvisioningMessage::Output("🔐 Unlocking SSH key...".into()));
+        match setup_ssh_agent(&ssh_key_path, &config.ssh_key_passphrase).await {
+            Ok((socket, pid)) => { 
+                auth_sock = Some(socket); 
+                agent_pid = Some(pid);
+                let _ = tx.send(ProvisioningMessage::Output("✅ SSH key unlocked".into()));
+            }
+            Err(e) => {
+                return Err(format!("Failed to setup SSH agent: {}", e));
+            }
+        }
+    }
+
+    let _ = tx.send(ProvisioningMessage::Output(format!("📋 Building Ansible command...")));
+    
     let mut cmd = Command::new("ansible-playbook");
-    cmd.current_dir(&repo_root);
-    // Disable ANSI color codes — the GUI does its own coloring
-    cmd.env("ANSIBLE_NOCOLOR", "1");
-    cmd.env("ANSIBLE_FORCE_COLOR", "0");
-    cmd.env("NO_COLOR", "1");
+    cmd.current_dir(&root).env("ANSIBLE_NOCOLOR", "1");
+    if let Some(sock) = &auth_sock { cmd.env("SSH_AUTH_SOCK", sock); }
+    
     cmd.arg("playbook.yml");
     cmd.arg("-e").arg(format!("target_ip={}", config.ip_address));
     cmd.arg("-e").arg(format!("target_user={}", config.ssh_user));
+    if !config.connection_password.is_empty() { cmd.arg("-e").arg(format!("connection_password={}", config.connection_password)); }
     cmd.arg("-e").arg(format!("ssh_key_path={}", ssh_key_path.display()));
-
-    if !config.hostname.is_empty() {
-        cmd.arg("-e").arg(format!("target_hostname={}", config.hostname));
-    }
-
-    cmd.arg("-e").arg(format!("prompt_enable_fail2ban={}", bool_to_yes_no(config.fail2ban)));
+    
+    if !config.hostname.is_empty() { cmd.arg("-e").arg(format!("target_hostname={}", config.hostname)); }
+    cmd.arg("-e").arg(format!("prompt_create_user={}", bool_to_yes_no(config.create_user)));
+    cmd.arg("-e").arg(format!("added_user={}", config.added_user));
+    cmd.arg("-e").arg(format!("user_password={}", config.user_password));
     cmd.arg("-e").arg(format!("prompt_install_docker={}", bool_to_yes_no(config.docker)));
     cmd.arg("-e").arg(format!("prompt_install_lemp={}", bool_to_yes_no(config.lemp)));
-    cmd.arg("-e").arg(format!("prompt_enable_swap={}", bool_to_yes_no(config.swap)));
-    cmd.arg("-e").arg(format!("prompt_enable_cron_jobs={}", bool_to_yes_no(config.cron_jobs)));
-    cmd.arg("-e").arg(format!("prompt_install_dev_tools={}", bool_to_yes_no(config.devtools)));
     cmd.arg("-e").arg(format!("prompt_install_wordpress={}", bool_to_yes_no(config.wordpress)));
     cmd.arg("-e").arg(format!("prompt_install_certbot={}", bool_to_yes_no(config.certbot)));
+    cmd.arg("-e").arg(format!("prompt_install_dev_tools={}", bool_to_yes_no(config.devtools)));
+    cmd.arg("-e").arg(format!("prompt_install_neovim={}", bool_to_yes_no(config.install_neovim)));
+    cmd.arg("-e").arg(format!("prompt_install_zsh={}", bool_to_yes_no(config.install_zsh)));
+    cmd.arg("-e").arg(format!("prompt_install_tmux={}", bool_to_yes_no(config.install_tmux)));
+    cmd.arg("-e").arg(format!("prompt_install_nodejs={}", bool_to_yes_no(config.install_nodejs)));
+    cmd.arg("-e").arg(format!("prompt_install_claude_code={}", bool_to_yes_no(config.install_claude_code)));
+    cmd.arg("-e").arg(format!("prompt_install_gemini={}", bool_to_yes_no(config.install_gemini)));
+    cmd.arg("-e").arg(format!("prompt_install_kiro={}", bool_to_yes_no(config.install_kiro)));
+    cmd.arg("-e").arg(format!("prompt_install_github_cli={}", bool_to_yes_no(config.install_github_cli)));
+    cmd.arg("-e").arg(format!("prompt_install_btop={}", bool_to_yes_no(config.install_btop)));
+    cmd.arg("-e").arg(format!("prompt_install_ripgrep={}", bool_to_yes_no(config.install_ripgrep)));
+    cmd.arg("-e").arg(format!("prompt_install_fd={}", bool_to_yes_no(config.install_fd)));
+    cmd.arg("-e").arg(format!("prompt_install_duf={}", bool_to_yes_no(config.install_duf)));
+    cmd.arg("-e").arg(format!("prompt_install_ncdu={}", bool_to_yes_no(config.install_ncdu)));
+    cmd.arg("-e").arg(format!("prompt_install_lnav={}", bool_to_yes_no(config.install_lnav)));
+    cmd.arg("-e").arg(format!("prompt_install_tldr={}", bool_to_yes_no(config.install_tldr)));
+    cmd.arg("-e").arg(format!("prompt_install_lazygit={}", bool_to_yes_no(config.install_lazygit)));
+    cmd.arg("-e").arg(format!("prompt_install_uv={}", bool_to_yes_no(config.install_uv)));
+    cmd.arg("-e").arg(format!("prompt_install_fzf={}", bool_to_yes_no(config.install_fzf)));
+    cmd.arg("-e").arg(format!("prompt_install_bat={}", bool_to_yes_no(config.install_bat)));
+    cmd.arg("-e").arg(format!("prompt_install_eza={}", bool_to_yes_no(config.install_eza)));
+    cmd.arg("-e").arg(format!("prompt_install_zoxide={}", bool_to_yes_no(config.install_zoxide)));
+    cmd.arg("-e").arg(format!("prompt_install_jq={}", bool_to_yes_no(config.install_jq)));
+    cmd.arg("-e").arg(format!("prompt_install_htop={}", bool_to_yes_no(config.install_htop)));
+    cmd.arg("-e").arg(format!("prompt_install_gping={}", bool_to_yes_no(config.install_gping)));
+    cmd.arg("-e").arg(format!("prompt_install_nmap={}", bool_to_yes_no(config.install_nmap)));
+    cmd.arg("-e").arg(format!("prompt_install_autossh={}", bool_to_yes_no(config.install_autossh)));
+    cmd.arg("-e").arg(format!("prompt_install_starship={}", bool_to_yes_no(config.install_starship)));
+    cmd.arg("-e").arg(format!("prompt_install_direnv={}", bool_to_yes_no(config.install_direnv)));
+    cmd.arg("-e").arg(format!("prompt_install_fish={}", bool_to_yes_no(config.install_fish)));
+    cmd.arg("-e").arg(format!("prompt_install_micro={}", bool_to_yes_no(config.install_micro)));
+    cmd.arg("-e").arg(format!("prompt_install_ranger={}", bool_to_yes_no(config.install_ranger)));
+    cmd.arg("-e").arg(format!("prompt_enable_fail2ban={}", bool_to_yes_no(config.fail2ban)));
+    cmd.arg("-e").arg(format!("prompt_enable_swap={}", bool_to_yes_no(config.swap)));
+    cmd.arg("-e").arg(format!("prompt_enable_cron_jobs={}", bool_to_yes_no(config.cron_jobs)));
     cmd.arg("-e").arg(format!("prompt_enable_periodic_reboot={}", bool_to_yes_no(config.periodic_reboot)));
     cmd.arg("-e").arg(format!("prompt_reboot_hour={}", config.reboot_hour));
 
-    // Devtools sub-task flags
-    if config.devtools {
-        cmd.arg("-e").arg(format!("prompt_install_neovim={}", bool_to_yes_no(config.install_neovim)));
-        cmd.arg("-e").arg(format!("prompt_install_nodejs={}", bool_to_yes_no(config.install_nodejs)));
-        cmd.arg("-e").arg(format!("prompt_install_claude_code={}", bool_to_yes_no(config.install_claude_code)));
+    if config.system_hardening { cmd.arg("-e").arg("enable_kernel_hardening=yes"); }
+    if config.apparmor { cmd.arg("-e").arg("enable_apparmor=yes"); }
+    if config.rootkit_detection { cmd.arg("-e").arg("enable_rkhunter=yes"); }
+    if config.file_integrity { cmd.arg("-e").arg("enable_aide=yes"); }
+    if config.audit_logging { cmd.arg("-e").arg("enable_auditd=yes"); }
+    if config.log_monitoring { cmd.arg("-e").arg("enable_logwatch=yes"); }
+    
+    if config.ssh_2fa_totp || config.ssh_2fa_fido2 || config.ssh_2fa_duo { 
+        cmd.arg("-e").arg("enable_ssh_2fa=yes"); 
+        if config.ssh_2fa_fido2 { cmd.arg("-e").arg("enable_ssh_2fa_fido2=yes"); }
+        if config.ssh_2fa_duo { cmd.arg("-e").arg("enable_ssh_2fa_duo=yes"); }
     }
+    
+    if config.backups { cmd.arg("-e").arg("enable_backups=yes"); }
+    if config.usb_restrictions { cmd.arg("-e").arg("enable_usb_restrictions=yes"); }
+    if config.disable_ipv6 { cmd.arg("-e").arg("disable_ipv6=yes"); }
+    if config.suricata { cmd.arg("-e").arg("enable_suricata=yes"); }
 
-    if config.system_hardening {
-        cmd.arg("-e").arg("enable_kernel_hardening=yes");
-    }
-    if config.secure_shm {
-        cmd.arg("-e").arg("enable_secure_shm=yes");
-    }
-    if config.apparmor {
-        cmd.arg("-e").arg("enable_apparmor=yes");
-    }
-    if config.rootkit_detection {
-        cmd.arg("-e").arg("enable_rkhunter=yes");
-    }
-    if config.file_integrity {
-        cmd.arg("-e").arg("enable_aide=yes");
-    }
-    if config.audit_logging {
-        cmd.arg("-e").arg("enable_auditd=yes");
-    }
-    if config.log_monitoring {
-        cmd.arg("-e").arg("enable_logwatch=yes");
-    }
-    if config.lynis {
-        cmd.arg("-e").arg("enable_lynis=yes");
-    }
-    if config.disable_ipv6 {
-        cmd.arg("-e").arg("disable_ipv6=yes");
-    }
-    if config.suricata {
-        cmd.arg("-e").arg("enable_suricata=yes");
-    }
-    if config.ssh_2fa_totp || config.ssh_2fa_fido2 || config.ssh_2fa_duo || config.advanced_protection {
-        cmd.arg("-e").arg("enable_ssh_2fa=yes");
-    }
-    if config.ssh_2fa_fido2 {
-        cmd.arg("-e").arg("enable_ssh_2fa_fido2=yes");
-    }
-    if config.ssh_2fa_duo {
-        cmd.arg("-e").arg("enable_ssh_2fa_duo=yes");
-    }
-    if config.backups || config.advanced_protection {
-        cmd.arg("-e").arg("enable_backups=yes");
-    }
-    if config.usb_restrictions || config.advanced_protection {
-        cmd.arg("-e").arg("enable_usb_restrictions=yes");
-    }
-
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-
-    let mut child = cmd.spawn()
-        .map_err(|e| format!("Failed to spawn ansible-playbook: {}", e))?;
-
-    // Store child PID for cleanup
-    if let Some(pid) = child.id() {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    
+    let _ = tx.send(ProvisioningMessage::Output("🚀 Starting Ansible playbook...".into()));
+    
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ansible-playbook: {}. Is Ansible installed?", e))?;
+    
+    if let Some(pid) = child.id() { 
         child_pid.store(pid, Ordering::SeqCst);
-        println!("Ansible-playbook child process spawned with PID: {}", pid);
+        let _ = tx.send(ProvisioningMessage::Output(format!("📌 Process ID: {}", pid)));
     }
 
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-
-    let stdout_reader = BufReader::new(stdout);
-    let stderr_reader = BufReader::new(stderr);
-
-    // Create log file for this run
-    let log_path = repo_root.join("provisioning.log");
-    let log_file = std::sync::Arc::new(std::sync::Mutex::new(
-        std::fs::File::create(&log_path).ok()
-    ));
-    let _ = tx.send(ProvisioningMessage::Output(
-        format!("Log file: {}", log_path.display())
-    ));
-
+    
+    // Handle stdout
     let tx_stdout = tx.clone();
-    let tx_stderr = tx.clone();
-    let shutdown_stdout = Arc::clone(&shutdown_signal);
-    let shutdown_stderr = Arc::clone(&shutdown_signal);
-    let log_stdout = Arc::clone(&log_file);
-    let log_stderr = Arc::clone(&log_file);
-
+    let shutdown_stdout = Arc::clone(&shutdown);
     let stdout_task = tokio::spawn(async move {
-        let mut lines = stdout_reader.lines();
+        let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if shutdown_stdout.load(Ordering::SeqCst) {
-                break;
-            }
+            if shutdown_stdout.load(Ordering::SeqCst) { break; }
             let clean = strip_ansi(&line);
-            let trimmed = clean.trim();
-            // Skip empty lines and pure timing lines (noise from profile_tasks)
-            if trimmed.is_empty() {
-                continue;
+            if !is_timing_only_line(&clean) && !clean.trim().is_empty() {
+                let _ = tx_stdout.send(ProvisioningMessage::Output(clean));
             }
-            if is_timing_only_line(trimmed) {
-                // Still log to file, but don't show in GUI
-                if let Ok(mut guard) = log_stdout.lock() {
-                    if let Some(ref mut f) = *guard {
-                        use std::io::Write;
-                        let _ = writeln!(f, "{}", clean);
-                    }
-                }
-                continue;
-            }
-            // Write to log file
-            if let Ok(mut guard) = log_stdout.lock() {
-                if let Some(ref mut f) = *guard {
-                    use std::io::Write;
-                    let _ = writeln!(f, "{}", clean);
-                }
-            }
-            let _ = tx_stdout.send(ProvisioningMessage::Output(clean));
         }
     });
-
+    
+    // Handle stderr
+    let tx_stderr = tx.clone();
+    let shutdown_stderr = Arc::clone(&shutdown);
     let stderr_task = tokio::spawn(async move {
-        let mut lines = stderr_reader.lines();
+        let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if shutdown_stderr.load(Ordering::SeqCst) {
-                break;
-            }
+            if shutdown_stderr.load(Ordering::SeqCst) { break; }
             let clean = strip_ansi(&line);
-            let trimmed = clean.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            // Write to log file (always)
-            if let Ok(mut guard) = log_stderr.lock() {
-                if let Some(ref mut f) = *guard {
-                    use std::io::Write;
-                    let _ = writeln!(f, "STDERR: {}", clean);
-                }
-            }
-            // Categorize: deprecation/warning lines as Output (not Error), real errors as Error
-            let is_warning = trimmed.contains("[WARNING]")
-                || trimmed.contains("[DEPRECATION WARNING]")
-                || trimmed.starts_with("Origin:")
-                || trimmed.starts_with("Use `ansible_facts")
-                || trimmed.contains("^ column");
-            // Skip verbose deprecation context lines (source code snippets)
-            let is_deprecation_context = trimmed.starts_with("Origin:")
-                || trimmed.contains("^ column")
-                || (trimmed.len() > 2 && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
-                    && trimmed.contains("  "));
-            if is_deprecation_context {
-                continue; // Skip noisy deprecation context lines from GUI
-            }
-            if is_warning {
-                let _ = tx_stderr.send(ProvisioningMessage::Output(format!("WARNING: {}", clean)));
-            } else {
-                let _ = tx_stderr.send(ProvisioningMessage::Error(clean));
+            if !clean.trim().is_empty() {
+                let _ = tx_stderr.send(ProvisioningMessage::Output(format!("⚠️  {}", clean)));
             }
         }
     });
-
-    // Wait for child process or shutdown signal
-    let status = loop {
-        if shutdown_signal.load(Ordering::SeqCst) {
-            println!("Shutdown signal received - killing child process...");
-            let _ = child.kill().await;
-            break child.wait().await
-                .map_err(|e| format!("Failed to wait for process: {}", e))?;
-        }
-
-        // Poll child status
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
-                // Still running, sleep briefly
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-            Err(e) => {
-                return Err(format!("Failed to check process status: {}", e));
-            }
-        }
-    };
-
-    // Abort tasks to prevent hanging
-    stdout_task.abort();
-    stderr_task.abort();
-
-    // Give tasks a moment to finish naturally
-    let _ = tokio::time::timeout(Duration::from_millis(500), async {
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
-    }).await;
-
-    if !status.success() {
-        let exit_code = status.code().unwrap_or(-1);
-        let _ = tx.send(ProvisioningMessage::Error(
-            format!("Provisioning failed with exit code: {}", exit_code)
-        ));
+    
+    // Wait for both tasks
+    let _ = tokio::join!(stdout_task, stderr_task);
+    
+    // Check for shutdown signal
+    if shutdown.load(Ordering::SeqCst) {
+        let _ = tx.send(ProvisioningMessage::Output("🛑 Shutdown requested, killing process...".into()));
+        let _ = child.kill().await;
+        let _ = tx.send(ProvisioningMessage::Complete(false));
+        return Ok(());
     }
-    let _ = tx.send(ProvisioningMessage::Complete(status.success()));
-
+    
+    let status = child.wait().await.map_err(|e| format!("Failed to wait for child process: {}", e))?;
+    
+    // Cleanup SSH agent
+    if let Some(pid) = agent_pid { 
+        let _ = tx.send(ProvisioningMessage::Output("🔒 Cleaning up SSH agent...".into()));
+        let _ = std::process::Command::new("kill").arg(pid).status(); 
+    }
+    
+    let success = status.success();
+    let exit_code = status.code().unwrap_or(-1);
+    
+    if success {
+        let _ = tx.send(ProvisioningMessage::Output(format!("✅ Provisioning completed successfully (exit code: {})", exit_code)));
+    } else {
+        let _ = tx.send(ProvisioningMessage::Output(format!("❌ Provisioning failed (exit code: {})", exit_code)));
+    }
+    
+    let _ = tx.send(ProvisioningMessage::Complete(success));
     Ok(())
 }
 
-/// Cleans up any existing rustsible-gui processes before starting.
-/// This prevents multiple instances from running and mimics macOS Force Quit behavior.
-/// Includes aggressive zombie process cleanup with parent killing and process group termination.
 fn cleanup_previous_instances() -> Result<(), String> {
-    println!("Cleaning up previous instances...");
-
-    // Get the current process ID to avoid killing ourselves
-    let current_pid = std::process::id();
-
-    // Initialize system with process information
+    use sysinfo::{ProcessRefreshKind, RefreshKind};
     let mut system = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything())
     );
-
-    // Refresh process list
     system.refresh_processes();
-
-    // Find all rustsible-gui processes
-    let target_processes: Vec<_> = system
-        .processes()
-        .iter()
-        .filter(|(_, process)| {
-            let pid = process.pid().as_u32();
-            let name = process.name();
-
-            // Match process name and exclude current process
-            pid != current_pid && name.contains("rustsible-gui")
-        })
-        .map(|(pid, _)| *pid)
-        .collect();
-
-    if target_processes.is_empty() {
-        println!("No running instances found.");
-        return Ok(());
-    }
-
-    let current_pid_str = current_pid.to_string();
-    println!("Found {} process(es) to terminate", target_processes.len());
-
-    // Phase 0: Kill parent processes first (releases zombie children)
-    #[cfg(unix)]
-    {
-        println!("Phase 0: Killing parent processes to release zombies...");
-        system.refresh_processes();
-
-        let mut parent_pids = std::collections::HashSet::new();
-
-        for pid in &target_processes {
-            if let Some(process) = system.process(*pid) {
-                if let Some(parent_pid) = process.parent() {
-                    let parent_pid_u32 = parent_pid.as_u32();
-
-                    // Don't kill ourselves or init/launchd (PID 1)
-                    if parent_pid_u32 != current_pid && parent_pid_u32 != 1 {
-                        if let Some(parent_process) = system.process(parent_pid) {
-                            let parent_name = parent_process.name();
-
-                            // Only kill parent if it's related to our app (not system processes)
-                            if !parent_name.contains("launchd")
-                                && !parent_name.contains("init")
-                                && !parent_name.contains("systemd") {
-                                parent_pids.insert(parent_pid_u32);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for parent_pid in parent_pids {
-            println!("  Killing parent PID {}...", parent_pid);
-            let _ = std::process::Command::new("kill")
-                .arg("-9")
-                .arg(parent_pid.to_string())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .ok();
-        }
-
-        thread::sleep(Duration::from_millis(200));
-    }
-
-    // Phase 1: Graceful termination with SIGTERM (or equivalent)
-    println!("Phase 1: Attempting graceful termination...");
-    for pid in &target_processes {
-        match system.process(*pid) {
-            Some(process) => {
-                println!("  Sending TERM signal to PID {}...", pid.as_u32());
-                if !process.kill() {
-                    println!("  Warning: Failed to send termination signal to PID {}", pid.as_u32());
-                }
-            }
-            None => {
-                println!("  Process {} already terminated", pid.as_u32());
-            }
+    let current_pid = std::process::id();
+    let current_pid_u32 = current_pid as u32;
+    for (pid, process) in system.processes() {
+        let pid_u32 = pid.as_u32();
+        if process.name().contains("rustsible-gui") && pid_u32 != current_pid_u32 {
+            let _ = process.kill();
         }
     }
-
-    // Wait for graceful shutdown
-    thread::sleep(Duration::from_millis(300));
-
-    // Phase 2: Force kill remaining processes (SIGKILL or equivalent)
-    println!("Phase 2: Force killing remaining processes...");
-    system.refresh_processes();
-
-    for pid in &target_processes {
-        if let Some(process) = system.process(*pid) {
-            println!("  Force quitting PID {}...", pid.as_u32());
-
-            // Kill with force - sysinfo's kill_with sends SIGKILL on Unix
-            if cfg!(unix) {
-                use sysinfo::Signal;
-                if !process.kill_with(Signal::Kill).unwrap_or(false) {
-                    println!("  Warning: Failed to force kill PID {}", pid.as_u32());
-                }
-            } else {
-                // On Windows, regular kill is already forceful
-                if !process.kill() {
-                    println!("  Warning: Failed to force kill PID {}", pid.as_u32());
-                }
-            }
-        }
-    }
-
-    // Wait for processes to fully terminate
-    thread::sleep(Duration::from_millis(500));
-
-    // Phase 3: Targeted kill of remaining processes (Unix only)
-    #[cfg(unix)]
-    {
-        println!("Phase 3: Targeted cleanup of remaining PIDs...");
-
-        system.refresh_processes();
-        for pid in &target_processes {
-            if system.process(*pid).is_some() {
-                let pid_str = pid.as_u32().to_string();
-                if pid_str != current_pid_str {
-                    println!("  kill -9 PID {}...", pid_str);
-                    let _ = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(&pid_str)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status()
-                        .ok();
-                }
-            }
-        }
-
-        thread::sleep(Duration::from_millis(300));
-        println!("Targeted cleanup completed.");
-    }
-
-    // Final verification
-    system.refresh_processes();
-    let final_check: Vec<_> = system
-        .processes()
-        .iter()
-        .filter(|(_, process)| {
-            let pid = process.pid().as_u32();
-            let name = process.name();
-            pid != current_pid && name.contains("rustsible-gui")
-        })
-        .collect();
-
-    if !final_check.is_empty() {
-        println!(
-            "Warning: {} zombie process(es) still detected after aggressive cleanup",
-            final_check.len()
-        );
-
-        // Log details about remaining zombies
-        for (pid, process) in &final_check {
-            println!(
-                "  Zombie PID: {} Name: {} Status: {:?}",
-                pid.as_u32(),
-                process.name(),
-                process.status()
-            );
-        }
-    } else {
-        println!("Cleanup completed successfully - all processes terminated.");
-    }
-
     Ok(())
 }
 
 fn main() -> Result<(), eframe::Error> {
-    // Clean up any previous instances before starting
-    if let Err(e) = cleanup_previous_instances() {
-        eprintln!("Warning: Failed to clean up previous instances: {}", e);
-        eprintln!("Continuing anyway...");
-    }
+    // Set up global panic hook to catch crashes
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_else(|| "unknown".to_string());
+        let message = panic_info.payload().downcast_ref::<&str>().map(|s| *s).unwrap_or_else(|| {
+            panic_info.payload().downcast_ref::<String>().map(|s| &s[..]).unwrap_or("no message")
+        });
+        let log = format!("Panic at {}: {}\n", location, message);
+        let _ = std::fs::write("crash.log", log);
+        eprintln!("CRASH DETECTED: Check crash.log for details");
+    }));
 
-    println!("Launching Rustsible GUI...");
-
-    // Set up Unix signal handlers for graceful shutdown
+    // Temporarily disabled to debug crash
+    // let _ = cleanup_previous_instances();
     let term_signal = Arc::new(AtomicBool::new(false));
-
     #[cfg(unix)]
     {
         use signal_hook::consts::{SIGTERM, SIGINT};
-        use signal_hook::flag;
-
-        // Register SIGTERM handler (kill <pid>)
-        if let Err(e) = flag::register(SIGTERM, Arc::clone(&term_signal)) {
-            eprintln!("Warning: Failed to register SIGTERM handler: {}", e);
-        } else {
-            println!("Registered SIGTERM handler for graceful shutdown");
-        }
-
-        // Register SIGINT handler (Ctrl+C)
-        if let Err(e) = flag::register(SIGINT, Arc::clone(&term_signal)) {
-            eprintln!("Warning: Failed to register SIGINT handler: {}", e);
-        } else {
-            println!("Registered SIGINT handler for graceful shutdown");
-        }
+        let _ = signal_hook::flag::register(SIGTERM, Arc::clone(&term_signal));
+        let _ = signal_hook::flag::register(SIGINT, Arc::clone(&term_signal));
     }
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([860.0, 580.0])
-            .with_min_inner_size([700.0, 450.0])
-            .with_title("Rustsible"),
+            .with_inner_size([1200.0, 800.0])
+            .with_title("Rustsible Platinum v26"),
         ..Default::default()
     };
-
-    let term_signal_clone = Arc::clone(&term_signal);
-    eframe::run_native(
-        "Rustsible",
-        options,
-        Box::new(move |cc| Ok(Box::new(AnsibleProvisioningApp::new(cc, term_signal_clone)))),
-    )
+    eframe::run_native("Rustsible Platinum", options, Box::new(move |cc| Ok(Box::new(AnsibleProvisioningApp::new(cc, term_signal)))))
 }

@@ -60,6 +60,7 @@
       debug:
         msg: "{{ item }}"
       loop:
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_create_user | default('yes') | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Create Admin User ({{ added_user | default('organic') }})"
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_enable_fail2ban | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Fail2ban Intrusion Prevention"
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_docker | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Docker & Docker Compose"
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_lemp | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} LEMP Stack (Nginx, MySQL, PHP)"
@@ -68,13 +69,32 @@
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_dev_tools | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Development Tools"
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_wordpress | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} WordPress CMS"
         - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_certbot | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Certbot SSL/TLS Certificates"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_gemini | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Gemini AI CLI"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_kiro | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Kiro Tool"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_github_cli | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} GitHub CLI"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_btop | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} btop Monitor"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_tldr | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} tldr Pages"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_lazygit | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} lazygit TUI"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_tmux | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} tmux Multiplexer"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_zsh | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} Zsh Shell"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_ripgrep | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} ripgrep Utility"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_uv | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} uv Python PM"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_fzf | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} fzf Finder"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_bat | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} bat Cat"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_eza | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} eza Ls"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_jq | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} jq Processor"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_autossh | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} autossh Persistence"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_starship | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} starship Prompt"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_direnv | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} direnv Switcher"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_micro | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} micro Editor"
+        - "  {{ '\033[1;32m✓\033[0m' if (prompt_install_ranger | lower in ['yes', 'y', 'true']) else '\033[1;31m✗\033[0m' }} ranger Manager"
         - ""
 
     - name: Display feature summary
       debug:
         msg: "  \033[1;33m▸\033[0m Total features enabled: {{ feature_count }}"
       vars:
-        feature_count: "{{ [prompt_enable_fail2ban, prompt_install_docker, prompt_install_lemp, prompt_enable_swap, prompt_enable_cron_jobs, prompt_install_dev_tools, prompt_install_wordpress, prompt_install_certbot] | select('match', '^(yes|y|true)$') | list | length }}"
+        feature_count: "{{ [prompt_create_user | default('yes'), prompt_enable_fail2ban, prompt_install_docker, prompt_install_lemp, prompt_enable_swap, prompt_enable_cron_jobs, prompt_install_dev_tools, prompt_install_wordpress, prompt_install_certbot, prompt_install_gemini, prompt_install_kiro, prompt_install_github_cli, prompt_install_btop, prompt_install_tldr, prompt_install_lazygit, prompt_install_tmux, prompt_install_zsh, prompt_install_ripgrep, prompt_install_uv, prompt_install_fzf, prompt_install_bat, prompt_install_eza, prompt_install_zoxide, prompt_install_jq, prompt_install_htop, prompt_install_gping, prompt_install_nmap, prompt_install_autossh, prompt_install_starship, prompt_install_direnv, prompt_install_fish, prompt_install_micro, prompt_install_ranger] | select('match', '^(yes|y|true)$') | list | length }}"
 
     - name: Validate WordPress prerequisites
       fail:
@@ -96,6 +116,7 @@
         groups: provisioning_target
         ansible_host: "{{ target_ip }}"
         ansible_user: "{{ target_user }}"
+        ansible_password: "{{ connection_password | default(omit) }}"
         ansible_ssh_private_key_file: "{{ ssh_key_path }}"
         ansible_python_interpreter: /usr/bin/python3
         # Store IP for fail2ban whitelist
@@ -103,6 +124,7 @@
         # Store hostname for server configuration
         server_hostname: "{{ target_hostname | default('') }}"
         # Pass feature selection flags to Play 2
+        create_user: "{{ prompt_create_user | default('yes') | lower in ['yes', 'y', 'true'] }}"
         enable_fail2ban: "{{ prompt_enable_fail2ban | lower in ['yes', 'y', 'true'] }}"
         install_docker: "{{ prompt_install_docker | lower in ['yes', 'y', 'true'] }}"
         install_lemp: "{{ prompt_install_lemp | lower in ['yes', 'y', 'true'] }}"
@@ -111,6 +133,34 @@
         install_dev_tools: "{{ prompt_install_dev_tools | lower in ['yes', 'y', 'true'] }}"
         install_wordpress: "{{ prompt_install_wordpress | lower in ['yes', 'y', 'true'] }}"
         install_certbot: "{{ prompt_install_certbot | lower in ['yes', 'y', 'true'] }}"
+        install_gemini: "{{ prompt_install_gemini | lower in ['yes', 'y', 'true'] }}"
+        install_kiro: "{{ prompt_install_kiro | lower in ['yes', 'y', 'true'] }}"
+        install_github_cli: "{{ prompt_install_github_cli | lower in ['yes', 'y', 'true'] }}"
+        install_btop: "{{ prompt_install_btop | lower in ['yes', 'y', 'true'] }}"
+        install_tldr: "{{ prompt_install_tldr | lower in ['yes', 'y', 'true'] }}"
+        install_lazygit: "{{ prompt_install_lazygit | lower in ['yes', 'y', 'true'] }}"
+        install_tmux: "{{ prompt_install_tmux | lower in ['yes', 'y', 'true'] }}"
+        install_zsh: "{{ prompt_install_zsh | lower in ['yes', 'y', 'true'] }}"
+        install_ripgrep: "{{ prompt_install_ripgrep | lower in ['yes', 'y', 'true'] }}"
+        install_fd: "{{ prompt_install_fd | lower in ['yes', 'y', 'true'] }}"
+        install_duf: "{{ prompt_install_duf | lower in ['yes', 'y', 'true'] }}"
+        install_ncdu: "{{ prompt_install_ncdu | lower in ['yes', 'y', 'true'] }}"
+        install_lnav: "{{ prompt_install_lnav | lower in ['yes', 'y', 'true'] }}"
+        install_uv: "{{ prompt_install_uv | lower in ['yes', 'y', 'true'] }}"
+        install_fzf: "{{ prompt_install_fzf | lower in ['yes', 'y', 'true'] }}"
+        install_bat: "{{ prompt_install_bat | lower in ['yes', 'y', 'true'] }}"
+        install_eza: "{{ prompt_install_eza | lower in ['yes', 'y', 'true'] }}"
+        install_zoxide: "{{ prompt_install_zoxide | lower in ['yes', 'y', 'true'] }}"
+        install_jq: "{{ prompt_install_jq | lower in ['yes', 'y', 'true'] }}"
+        install_htop: "{{ prompt_install_htop | lower in ['yes', 'y', 'true'] }}"
+        install_gping: "{{ prompt_install_gping | lower in ['yes', 'y', 'true'] }}"
+        install_nmap: "{{ prompt_install_nmap | lower in ['yes', 'y', 'true'] }}"
+        install_autossh: "{{ prompt_install_autossh | lower in ['yes', 'y', 'true'] }}"
+        install_starship: "{{ prompt_install_starship | lower in ['yes', 'y', 'true'] }}"
+        install_direnv: "{{ prompt_install_direnv | lower in ['yes', 'y', 'true'] }}"
+        install_fish: "{{ prompt_install_fish | lower in ['yes', 'y', 'true'] }}"
+        install_micro: "{{ prompt_install_micro | lower in ['yes', 'y', 'true'] }}"
+        install_ranger: "{{ prompt_install_ranger | lower in ['yes', 'y', 'true'] }}"
         enable_periodic_reboot: "{{ prompt_enable_periodic_reboot | lower in ['yes', 'y', 'true'] }}"
         cron_reboot_hour: "{{ prompt_reboot_hour | default('3') }}"
 
@@ -130,6 +180,8 @@
   become: true
   gather_facts: true
   gather_subset:
+    - hardware
+    - network
     - '!ohai'
     - '!facter'
 
@@ -174,14 +226,33 @@
       debug:
         msg: "{{ item }}"
       loop:
+        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (create_user | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Create Admin User"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_fail2ban | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Fail2ban Intrusion Prevention"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_docker | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Docker & Docker Compose"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_lemp | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  LEMP Stack"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_swap | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Swap Memory"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (enable_cron_jobs | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Cron Jobs"
         - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_dev_tools | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Development Tools"
-        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_wordpress | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  WordPress"
-        - "  {{ '\033[1;32m●\033[0m \033[1;32mENABLED\033[0m' if (install_certbot | bool) else '\033[1;90m○\033[0m \033[1;90mDISABLED\033[0m' }}  Certbot"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_wordpress | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  WordPress"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_certbot | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  Certbot"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_gemini | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  Gemini AI CLI"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_kiro | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  Kiro Tool"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_github_cli | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  GitHub CLI"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_btop | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  btop Monitor"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_tldr | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  tldr Pages"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_lazygit | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  lazygit TUI"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_tmux | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  tmux Multiplexer"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_zsh | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  Zsh Shell"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_ripgrep | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  ripgrep"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_uv | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  uv Python PM"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_fzf | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  fzf Finder"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_bat | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  bat Cat"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_eza | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  eza Ls"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_autossh | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  autossh"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_starship | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  starship"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_direnv | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  direnv"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_micro | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  micro"
+        - "  {{ '\033[1;32m●\033[1;32m ENABLED\033[0m' if (install_ranger | bool) else '\033[1;90m○\033[1;90m DISABLED\033[0m' }}  ranger"
         - ""
       tags:
         - always
