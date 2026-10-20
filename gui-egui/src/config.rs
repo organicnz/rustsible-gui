@@ -209,10 +209,9 @@ pub fn get_cache_path() -> PathBuf {
 pub fn load_cache() -> Result<ProvisioningConfig, String> {
     let cache_path = get_cache_path();
     if cache_path.exists() {
-        let contents = fs::read_to_string(&cache_path)
-            .map_err(|e| format!("Failed to read cache: {}", e))?;
-        serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse cache: {}", e))
+        let contents =
+            fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read cache: {}", e))?;
+        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse cache: {}", e))
     } else {
         Ok(ProvisioningConfig::default())
     }
@@ -222,6 +221,5 @@ pub fn save_cache(config: &ProvisioningConfig) -> Result<(), String> {
     let cache_path = get_cache_path();
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&cache_path, json)
-        .map_err(|e| format!("Failed to write cache: {}", e))
+    fs::write(&cache_path, json).map_err(|e| format!("Failed to write cache: {}", e))
 }
