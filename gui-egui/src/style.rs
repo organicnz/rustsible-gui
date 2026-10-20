@@ -39,22 +39,22 @@ pub fn setup_macos_v26_style(ctx: &egui::Context) {
 
     visuals.widgets.noninteractive.bg_fill = macos_v26_colors::GLASS_SURFACE;
     visuals.widgets.noninteractive.corner_radius = standard_radius;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, macos_v26_colors::TEXT_LOW);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, macos_v26_colors::TEXT_LOW);
 
     visuals.widgets.inactive.bg_fill = Color32::from_rgb(50, 50, 55);
     visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, macos_v26_colors::GLASS_BORDER);
+    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, macos_v26_colors::GLASS_BORDER);
 
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(60, 60, 65);
     visuals.widgets.hovered.corner_radius = CornerRadius::same(8);
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     visuals.widgets.active.bg_fill = macos_v26_colors::ACCENT;
     visuals.widgets.active.corner_radius = CornerRadius::same(8);
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     visuals.selection.bg_fill = macos_v26_colors::SELECTION_BG;
-    visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     ctx.set_visuals(visuals);
 
@@ -72,7 +72,7 @@ pub fn crystal_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui))
     egui::Frame::NONE
         .fill(macos_v26_colors::GLASS_SURFACE)
         .corner_radius(CornerRadius::same(16))
-        .stroke(Stroke::new(1.0, macos_v26_colors::GLASS_BORDER))
+        .stroke(Stroke::new(1.0_f32, macos_v26_colors::GLASS_BORDER))
         .inner_margin(24.0)
         .show(ui, add_contents);
 }

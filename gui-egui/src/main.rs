@@ -1140,7 +1140,7 @@ impl eframe::App for AnsibleProvisioningApp {
                         Color32::TRANSPARENT
                     };
                     let stroke = if selected {
-                        Stroke::new(1.0, macos_v26_colors::ACCENT)
+                        Stroke::new(1.0_f32, macos_v26_colors::ACCENT)
                     } else {
                         Stroke::NONE
                     };
@@ -1205,11 +1205,9 @@ impl eframe::App for AnsibleProvisioningApp {
                         self.launch_provisioning();
                     }
 
-                    if self.provisioning {
-                        if ui.button("TERMINATE").clicked() {
-                            self.cleanup();
-                            self.provisioning = false;
-                        }
+                    if self.provisioning && ui.button("TERMINATE").clicked() {
+                        self.cleanup();
+                        self.provisioning = false;
                     }
                 });
             });
@@ -1397,9 +1395,9 @@ async fn run_provisioning(
         }
     }
 
-    let _ = tx.send(ProvisioningMessage::Output(format!(
-        "📋 Building Ansible command..."
-    )));
+    let _ = tx.send(ProvisioningMessage::Output(
+        "📋 Building Ansible command...".to_string(),
+    ));
 
     let mut cmd = Command::new("ansible-playbook");
     cmd.current_dir(&root).env("ANSIBLE_NOCOLOR", "1");
@@ -1778,6 +1776,8 @@ async fn run_provisioning(
     Ok(())
 }
 
+// Kept for the call that is commented out in `main()`.
+#[allow(dead_code)]
 fn cleanup_previous_instances() -> Result<(), String> {
     use sysinfo::{ProcessRefreshKind, RefreshKind};
     let mut system = System::new_with_specifics(
@@ -1805,7 +1805,7 @@ fn main() -> Result<(), eframe::Error> {
         let message = panic_info
             .payload()
             .downcast_ref::<&str>()
-            .map(|s| *s)
+            .copied()
             .unwrap_or_else(|| {
                 panic_info
                     .payload()
