@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Visuals, CornerRadius, Stroke, Margin};
+use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Visuals};
 
 pub mod macos_v26_colors {
     use super::Color32;
@@ -6,16 +6,16 @@ pub mod macos_v26_colors {
     // --- Platinum v26 "Onyx Crystal" Palette ---
     pub const APP_BG: Color32 = Color32::from_rgb(10, 10, 12);
     pub const SIDEBAR_BG: Color32 = Color32::from_rgb(30, 30, 32);
-    
+
     // Glassmorphism - Refractive surfaces
     pub const GLASS_SURFACE: Color32 = Color32::from_rgba_premultiplied(40, 40, 45, 200);
     pub const GLASS_BORDER: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 15);
-    
+
     // Accents - "Retina Blue"
     pub const ACCENT: Color32 = Color32::from_rgb(0, 122, 255);
     pub const ACCENT_LIGHT: Color32 = Color32::from_rgb(100, 180, 255);
     pub const SELECTION_BG: Color32 = Color32::from_rgb(0, 88, 208);
-    
+
     // Typography
     pub const TEXT_BRIGHT: Color32 = Color32::from_rgb(255, 255, 255);
     pub const TEXT_MED: Color32 = Color32::from_rgb(160, 160, 165);
@@ -31,30 +31,30 @@ pub mod macos_v26_colors {
 
 pub fn setup_macos_v26_style(ctx: &egui::Context) {
     let mut visuals = Visuals::dark();
-    
+
     visuals.window_fill = macos_v26_colors::APP_BG;
     visuals.panel_fill = macos_v26_colors::SIDEBAR_BG;
-    
+
     let standard_radius = CornerRadius::same(12);
-    
+
     visuals.widgets.noninteractive.bg_fill = macos_v26_colors::GLASS_SURFACE;
     visuals.widgets.noninteractive.corner_radius = standard_radius;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, macos_v26_colors::TEXT_LOW);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, macos_v26_colors::TEXT_LOW);
 
     visuals.widgets.inactive.bg_fill = Color32::from_rgb(50, 50, 55);
     visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, macos_v26_colors::GLASS_BORDER);
-    
+    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, macos_v26_colors::GLASS_BORDER);
+
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(60, 60, 65);
     visuals.widgets.hovered.corner_radius = CornerRadius::same(8);
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
-    
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
+
     visuals.widgets.active.bg_fill = macos_v26_colors::ACCENT;
     visuals.widgets.active.corner_radius = CornerRadius::same(8);
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
-    
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
+
     visuals.selection.bg_fill = macos_v26_colors::SELECTION_BG;
-    visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     ctx.set_visuals(visuals);
 
@@ -63,7 +63,7 @@ pub fn setup_macos_v26_style(ctx: &egui::Context) {
     style.spacing.button_padding = egui::vec2(16.0, 8.0);
     style.spacing.window_margin = Margin::same(24);
     style.spacing.indent = 24.0;
-    
+
     ctx.set_style(style);
 }
 
@@ -72,7 +72,7 @@ pub fn crystal_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui))
     egui::Frame::NONE
         .fill(macos_v26_colors::GLASS_SURFACE)
         .corner_radius(CornerRadius::same(16))
-        .stroke(Stroke::new(1.0, macos_v26_colors::GLASS_BORDER))
+        .stroke(Stroke::new(1.0_f32, macos_v26_colors::GLASS_BORDER))
         .inner_margin(24.0)
         .show(ui, add_contents);
 }
