@@ -1,0 +1,29 @@
+name: System backup contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - roles/security/templates/backup_script.sh.j2
+      - tests/test_system_backup.py
+      - .github/workflows/backup-contract.yml
+  pull_request:
+    paths:
+      - roles/security/templates/backup_script.sh.j2
+      - tests/test_system_backup.py
+      - .github/workflows/backup-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-jinja2 rsync
+      - name: Exercise publication, failure and retention contracts
+        run: /usr/bin/python3 -m unittest discover -s tests -v
