@@ -1,6 +1,7 @@
 use eframe::egui::{self, Color32, Stroke, StrokeKind, CornerRadius, RichText, Margin};
 use std::path::PathBuf;
 use std::process::Stdio;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -227,6 +228,7 @@ impl AnsibleProvisioningApp {
                         }
                     };
 
+                    #[cfg(unix)]
                     if let Some(pid) = agent_pid {
                         let _ = std::process::Command::new("kill").arg("-9").arg(pid).status();
                     }
@@ -761,6 +763,7 @@ fn strip_ansi(s: &str) -> String {
 
 fn bool_to_yes_no(v: bool) -> &'static str { if v { "yes" } else { "no" } }
 
+#[cfg(unix)]
 async fn setup_ssh_agent(key_path: &std::path::Path, passphrase: &str) -> Result<(String, String), String> {
     let output = Command::new("ssh-agent").arg("-s").output().await.map_err(|e| e.to_string())?;
     let out_str = String::from_utf8_lossy(&output.stdout);
@@ -812,6 +815,14 @@ async fn setup_ssh_agent(key_path: &std::path::Path, passphrase: &str) -> Result
     }
 
     Ok((socket, pid))
+}
+
+#[cfg(not(unix))]
+async fn setup_ssh_agent(
+    _key_path: &std::path::Path,
+    _passphrase: &str,
+) -> Result<(String, String), String> {
+    Err("SSH agent passphrase unlock is not supported on this platform".into())
 }
 
 async fn run_provisioning(config: ProvisioningConfig, tx: Sender<ProvisioningMessage>, shutdown: Arc<AtomicBool>, child_pid: Arc<AtomicU32>) -> Result<(), String> {

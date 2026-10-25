@@ -1,0 +1,63 @@
+name: Rust GUI CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # eframe / egui / rfd require GTK3, X11, and audio dev headers on Linux.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libgtk-3-dev \
+            libxkbcommon-dev \
+            libssl-dev
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gui-egui/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('gui-egui/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting (cargo fmt)
+        working-directory: gui-egui
+        run: cargo fmt --check
+
+      - name: Lint (cargo clippy)
+        working-directory: gui-egui
+        run: cargo clippy -- -D warnings
+
+      - name: Build release binary (cargo build)
+        working-directory: gui-egui
+        run: cargo build --release

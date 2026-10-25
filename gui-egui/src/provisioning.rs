@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -55,6 +56,7 @@ pub(crate) fn bool_to_yes_no(v: bool) -> &'static str {
     }
 }
 
+#[cfg(unix)]
 pub(crate) async fn setup_ssh_agent(
     key_path: &std::path::Path,
     passphrase: &str,
@@ -132,6 +134,14 @@ pub(crate) async fn setup_ssh_agent(
     }
 
     Ok((socket, pid))
+}
+
+#[cfg(not(unix))]
+pub(crate) async fn setup_ssh_agent(
+    _key_path: &std::path::Path,
+    _passphrase: &str,
+) -> Result<(String, String), String> {
+    Err("SSH agent passphrase unlock is not supported on this platform".into())
 }
 
 pub(crate) async fn run_provisioning(
@@ -504,7 +514,8 @@ pub(crate) async fn run_provisioning(
         .await
         .map_err(|e| format!("Failed to wait for child process: {}", e))?;
 
-    // Cleanup SSH agent
+    // Cleanup SSH agent (Unix only — ssh-agent is a Unix daemon)
+    #[cfg(unix)]
     if let Some(pid) = agent_pid {
         let _ = tx.send(ProvisioningMessage::Output(
             "🔒 Cleaning up SSH agent...".into(),
